@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 pub fn get_git_pair_dir() -> Result<PathBuf, String> {
     let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
@@ -69,7 +68,6 @@ pub fn add_coauthor(name: &str, surname: &str, email: &str) -> Result<String, St
 pub fn update_commit_template() -> Result<(), String> {
     let git_pair_dir = get_git_pair_dir()?;
     let config_file = git_pair_dir.join("config");
-    let template_file = git_pair_dir.join("commit-template");
     
     // Read the config file to get co-authors
     let config_content = fs::read_to_string(&config_file)
@@ -82,36 +80,10 @@ pub fn update_commit_template() -> Result<(), String> {
         .collect();
     
     if coauthor_lines.is_empty() {
-        // No co-authors, remove the commit template and hook
-        let _ = fs::remove_file(&template_file);
-        let _ = Command::new("git")
-            .args(&["config", "--unset", "commit.template"])
-            .output();
+        // No co-authors, remove the hook
         remove_git_hook()?;
         return Ok(());
     }
-    
-    // Create commit template content
-    let mut template_content = String::new();
-    template_content.push_str("# Enter your commit message above\n");
-    template_content.push_str("# Co-authors will be automatically added below:\n");
-    template_content.push('\n');
-    
-    for coauthor in &coauthor_lines {
-        template_content.push_str(coauthor);
-        template_content.push('\n');
-    }
-    
-    // Write the template file
-    fs::write(&template_file, template_content)
-        .map_err(|e| format!("Error writing commit template: {}", e))?;
-    
-    // Set git to use this template
-    let template_path = template_file.to_string_lossy();
-    Command::new("git")
-        .args(&["config", "commit.template", &template_path])
-        .output()
-        .map_err(|e| format!("Error setting git commit template: {}", e))?;
     
     // Install Git hook for automatic co-author appending
     install_git_hook(&coauthor_lines)?;
@@ -120,6 +92,7 @@ pub fn update_commit_template() -> Result<(), String> {
 }
 
 fn install_git_hook(coauthor_lines: &[&str]) -> Result<(), String> {
+    use std::process::Command;
     let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
     let hooks_dir = current_dir.join(".git").join("hooks");
     let hook_file = hooks_dir.join("prepare-commit-msg");
@@ -187,7 +160,6 @@ fn remove_git_hook() -> Result<(), String> {
 pub fn clear_coauthors() -> Result<String, String> {
     let git_pair_dir = get_git_pair_dir()?;
     let config_file = git_pair_dir.join("config");
-    let template_file = git_pair_dir.join("commit-template");
     
     // Check if git-pair is initialized
     if !config_file.exists() {
@@ -199,18 +171,10 @@ pub fn clear_coauthors() -> Result<String, String> {
     fs::write(&config_file, default_config)
         .map_err(|e| format!("Error clearing config file: {}", e))?;
     
-    // Remove commit template file
-    let _ = fs::remove_file(&template_file);
-    
-    // Unset git commit template
-    let _ = Command::new("git")
-        .args(&["config", "--unset", "commit.template"])
-        .output();
-    
     // Remove git hook
     remove_git_hook()?;
     
-    Ok("Cleared all co-authors, removed commit template, and uninstalled git hook".to_string())
+    Ok("Cleared all co-authors and uninstalled git hook".to_string())
 }
 
 pub fn get_coauthors() -> Result<Vec<String>, String> {
@@ -243,6 +207,7 @@ mod tests {
 
     // Test helper to create a temporary git repository
     fn setup_test_repo() -> std::io::Result<tempfile::TempDir> {
+        use std::process::Command;
         let temp_dir = tempfile::tempdir()?;
         let repo_path = temp_dir.path();
         
@@ -316,8 +281,8 @@ mod tests {
         let config_content = fs::read_to_string(".git/git-pair/config").expect("Config file should exist");
         assert!(config_content.contains("Co-authored-by: John Doe <john.doe@example.com>"));
         
-        // Check commit template was created
-        assert!(Path::new(".git/git-pair/commit-template").exists());
+        // Check git hook was installed
+        assert!(Path::new(".git/hooks/prepare-commit-msg").exists());
     }
 
     #[test]
@@ -370,8 +335,8 @@ mod tests {
         let coauthors = get_coauthors().expect("Get coauthors should succeed");
         assert!(coauthors.is_empty());
         
-        // Check that commit template was removed
-        assert!(!Path::new(".git/git-pair/commit-template").exists());
+        // Check that git hook was removed
+        assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
     }
 
     #[test]
@@ -399,58 +364,6 @@ mod tests {
         let result = get_coauthors();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("git-pair not initialized"));
-    }
-
-    #[test]
-    fn test_commit_template_format() {
-        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
-        init_pair_config().expect("Init should succeed");
-        add_coauthor("John", "Doe", "john.doe@example.com").expect("Add should succeed");
-        
-        let template_content = fs::read_to_string(".git/git-pair/commit-template")
-            .expect("Template file should exist");
-        
-        assert!(template_content.contains("# Enter your commit message above"));
-        assert!(template_content.contains("# Co-authors will be automatically added below:"));
-        assert!(template_content.contains("Co-authored-by: John Doe <john.doe@example.com>"));
-    }
-
-    #[test]
-    fn test_git_config_integration() {
-        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
-        init_pair_config().expect("Init should succeed");
-        add_coauthor("John", "Doe", "john.doe@example.com").expect("Add should succeed");
-        
-        // Check that git config was set
-        let output = Command::new("git")
-            .args(&["config", "commit.template"])
-            .output()
-            .expect("Git command should succeed");
-        
-        let template_path = String::from_utf8(output.stdout).expect("Output should be valid UTF-8");
-        assert!(template_path.contains(".git/git-pair/commit-template"));
-        
-        // Check that git hook was installed
-        assert!(Path::new(".git/hooks/prepare-commit-msg").exists());
-        
-        let hook_content = fs::read_to_string(".git/hooks/prepare-commit-msg")
-            .expect("Hook file should exist");
-        assert!(hook_content.contains("git-pair hook"));
-        assert!(hook_content.contains("John Doe"));
-        
-        // Clear and check git config was unset
-        clear_coauthors().expect("Clear should succeed");
-        
-        let output = Command::new("git")
-            .args(&["config", "commit.template"])
-            .output()
-            .expect("Git command should run");
-        
-        // Should fail because config was unset
-        assert!(!output.status.success());
-        
-        // Hook should be removed
-        assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
     }
 
     #[test]
@@ -483,5 +396,26 @@ mod tests {
         let commit_message = String::from_utf8(log_output.stdout).expect("Log output should be valid UTF-8");
         assert!(commit_message.contains("Test commit message"));
         assert!(commit_message.contains("Co-authored-by: Alice Johnson <alice@example.com>"));
+    }
+
+    #[test]
+    fn test_git_config_integration() {
+        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        init_pair_config().expect("Init should succeed");
+        add_coauthor("John", "Doe", "john.doe@example.com").expect("Add should succeed");
+        
+        // Check that git hook was installed
+        assert!(Path::new(".git/hooks/prepare-commit-msg").exists());
+        
+        let hook_content = fs::read_to_string(".git/hooks/prepare-commit-msg")
+            .expect("Hook file should exist");
+        assert!(hook_content.contains("git-pair hook"));
+        assert!(hook_content.contains("John Doe"));
+        
+        // Clear and check hook was removed
+        clear_coauthors().expect("Clear should succeed");
+        
+        // Hook should be removed
+        assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
     }
 }

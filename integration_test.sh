@@ -42,24 +42,22 @@ if [[ ! "$STATUS_OUTPUT" == *"John Doe"* ]] || [[ ! "$STATUS_OUTPUT" == *"Jane S
     exit 1
 fi
 
-echo "✅ Test 4: Check commit template"
-if [ ! -f ".git/git-pair/commit-template" ]; then
-    echo "❌ Commit template not created"
+echo "✅ Test 4: Check git hook"
+if [ ! -f ".git/hooks/prepare-commit-msg" ]; then
+    echo "❌ Git hook not created"
     exit 1
 fi
 
-TEMPLATE_CONTENT=$(cat .git/git-pair/commit-template)
-if [[ ! "$TEMPLATE_CONTENT" == *"John Doe"* ]] || [[ ! "$TEMPLATE_CONTENT" == *"Jane Smith"* ]]; then
-    echo "❌ Commit template doesn't contain co-authors"
-    echo "Template: $TEMPLATE_CONTENT"
+HOOK_CONTENT=$(cat .git/hooks/prepare-commit-msg)
+if [[ ! "$HOOK_CONTENT" == *"John Doe"* ]] || [[ ! "$HOOK_CONTENT" == *"Jane Smith"* ]]; then
+    echo "❌ Git hook doesn't contain co-authors"
+    echo "Hook: $HOOK_CONTENT"
     exit 1
 fi
 
-echo "✅ Test 5: Check git config"
-GIT_TEMPLATE=$(git config commit.template)
-if [[ ! "$GIT_TEMPLATE" == *".git/git-pair/commit-template"* ]]; then
-    echo "❌ Git commit template not configured"
-    echo "Git config: $GIT_TEMPLATE"
+echo "✅ Test 5: Check no git commit template"
+if git config commit.template 2>/dev/null; then
+    echo "❌ Git commit template should not be configured in simplified version"
     exit 1
 fi
 
@@ -72,9 +70,9 @@ if [[ ! "$CLEAR_STATUS" == *"No co-authors configured"* ]]; then
     exit 1
 fi
 
-echo "✅ Test 7: Check git config unset"
-if git config commit.template 2>/dev/null; then
-    echo "❌ Git commit template not unset after clear"
+echo "✅ Test 7: Check git hook removed"
+if [ -f ".git/hooks/prepare-commit-msg" ]; then
+    echo "❌ Git hook not removed after clear"
     exit 1
 fi
 
