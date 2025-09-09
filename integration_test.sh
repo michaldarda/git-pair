@@ -109,9 +109,9 @@ fi
 cd "$TEST_DIR"
 
 echo "✅ Test 10: Global roster - add entries"
-# Use a temporary HOME directory for testing to avoid polluting user's config
-TEMP_HOME=$(mktemp -d)
-export HOME="$TEMP_HOME"
+# Use a temporary roster file for testing to avoid polluting user's global config
+TEMP_ROSTER_FILE="$TEST_DIR/test-roster"
+export GIT_PAIR_ROSTER_FILE="$TEMP_ROSTER_FILE"
 
 ./git-pair add --global alice "Alice Johnson" alice@company.com
 ./git-pair add --global bob "Bob Wilson" bob@company.com
@@ -154,7 +154,8 @@ if [[ ! "$ERROR_OUTPUT" == *"not found in global roster"* ]]; then
 fi
 
 # Cleanup temporary HOME
-rm -rf "$TEMP_HOME"
+rm -rf "$TEMP_ROSTER_FILE"
+unset GIT_PAIR_ROSTER_FILE
 
 # Cleanup
 cd "$OLDPWD"

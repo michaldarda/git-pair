@@ -102,5 +102,8 @@ fn main() {
         println!("  clear                                   Remove all co-authors from current branch");
         println!("  status                                  Show current branch co-authors");
         println!("  list --global                           Show global roster");
+        println!("");
+        println!("Environment Variables:");
+        println!("  GIT_PAIR_ROSTER_FILE                    Override global roster file location");
     }
 }

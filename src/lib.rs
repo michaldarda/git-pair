@@ -57,16 +57,22 @@ fn get_global_config_dir() -> Result<PathBuf, String> {
 }
 
 fn get_global_roster_file() -> Result<PathBuf, String> {
+    // Check for environment variable override (useful for testing)
+    if let Ok(custom_path) = env::var("GIT_PAIR_ROSTER_FILE") {
+        return Ok(PathBuf::from(custom_path));
+    }
+    
     let config_dir = get_global_config_dir()?;
     Ok(config_dir.join("roster"))
 }
 
 pub fn add_global_coauthor(alias: &str, name: &str, email: &str) -> Result<String, String> {
-    let config_dir = get_global_config_dir()?;
     let roster_file = get_global_roster_file()?;
     
-    // Create config directory if it doesn't exist
-    fs::create_dir_all(&config_dir).map_err(|e| format!("Error creating global config directory: {}", e))?;
+    // Create parent directory if it doesn't exist (handle both default and custom paths)
+    if let Some(parent) = roster_file.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Error creating roster directory: {}", e))?;
+    }
     
     // Read existing roster or create default content
     let content = if roster_file.exists() {
@@ -561,10 +567,10 @@ mod tests {
 
     #[test]
     fn test_global_roster_add_and_list() {
-        // Use a temporary HOME directory for testing
-        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
-        let original_home = env::var("HOME").unwrap_or_default();
-        env::set_var("HOME", temp_home.path());
+        // Use a temporary roster file for testing
+        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let temp_path = temp_file.path().to_str().unwrap();
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
         
         // Test adding to global roster
         let result = add_global_coauthor("alice", "Alice Johnson", "alice@example.com")
@@ -581,16 +587,16 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("already exists"));
         
-        // Restore original HOME
-        env::set_var("HOME", original_home);
+        // Clean up
+        env::remove_var("GIT_PAIR_ROSTER_FILE");
     }
 
     #[test]
     fn test_add_coauthor_from_global() {
         let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
-        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
-        let original_home = env::var("HOME").unwrap_or_default();
-        env::set_var("HOME", temp_home.path());
+        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let temp_path = temp_file.path().to_str().unwrap();
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
         
         // Initialize branch config
         init_pair_config().expect("Init should succeed");
@@ -613,21 +619,24 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found in global roster"));
         
-        // Restore original HOME
-        env::set_var("HOME", original_home);
+        // Clean up
+        env::remove_var("GIT_PAIR_ROSTER_FILE");
     }
 
     #[test]
     fn test_global_roster_empty() {
-        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
-        let original_home = env::var("HOME").unwrap_or_default();
-        env::set_var("HOME", temp_home.path());
+        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let temp_path = temp_file.path().to_str().unwrap();
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
+        
+        // Remove the file to test truly empty state
+        fs::remove_file(temp_path).ok();
         
         // Test empty global roster
         let roster = get_global_roster().expect("Should get empty global roster");
         assert!(roster.is_empty());
         
-        // Restore original HOME
-        env::set_var("HOME", original_home);
+        // Clean up
+        env::remove_var("GIT_PAIR_ROSTER_FILE");
     }
 }
