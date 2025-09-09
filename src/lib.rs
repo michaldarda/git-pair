@@ -82,11 +82,12 @@ pub fn update_commit_template() -> Result<(), String> {
         .collect();
     
     if coauthor_lines.is_empty() {
-        // No co-authors, remove the commit template
+        // No co-authors, remove the commit template and hook
         let _ = fs::remove_file(&template_file);
         let _ = Command::new("git")
             .args(&["config", "--unset", "commit.template"])
             .output();
+        remove_git_hook()?;
         return Ok(());
     }
     
@@ -111,6 +112,74 @@ pub fn update_commit_template() -> Result<(), String> {
         .args(&["config", "commit.template", &template_path])
         .output()
         .map_err(|e| format!("Error setting git commit template: {}", e))?;
+    
+    // Install Git hook for automatic co-author appending
+    install_git_hook(&coauthor_lines)?;
+    
+    Ok(())
+}
+
+fn install_git_hook(coauthor_lines: &[&str]) -> Result<(), String> {
+    let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
+    let hooks_dir = current_dir.join(".git").join("hooks");
+    let hook_file = hooks_dir.join("prepare-commit-msg");
+    
+    // Create hooks directory if it doesn't exist
+    fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
+    
+    // Create the hook script
+    let mut hook_content = String::new();
+    hook_content.push_str("#!/bin/sh\n");
+    hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
+    hook_content.push_str("COMMIT_MSG_FILE=$1\n");
+    hook_content.push_str("COMMIT_SOURCE=$2\n\n");
+    hook_content.push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
+    hook_content.push_str("if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n");
+    hook_content.push_str("  # Check if co-authors are already present\n");
+    hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
+    hook_content.push_str("    # Add co-authors from git-pair config\n");
+    hook_content.push_str("    echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
+    
+    for coauthor in coauthor_lines {
+        hook_content.push_str(&format!("    echo \"{}\" >> \"$COMMIT_MSG_FILE\"\n", coauthor));
+    }
+    
+    hook_content.push_str("  fi\n");
+    hook_content.push_str("fi\n");
+    
+    // Write the hook file
+    fs::write(&hook_file, hook_content)
+        .map_err(|e| format!("Error writing git hook: {}", e))?;
+    
+    // Make the hook executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook_file)
+            .map_err(|e| format!("Error getting hook file permissions: {}", e))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook_file, perms)
+            .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+fn remove_git_hook() -> Result<(), String> {
+    let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
+    let hook_file = current_dir.join(".git").join("hooks").join("prepare-commit-msg");
+    
+    if hook_file.exists() {
+        // Check if this is our hook by looking for git-pair signature
+        let hook_content = fs::read_to_string(&hook_file)
+            .map_err(|e| format!("Error reading hook file: {}", e))?;
+        
+        if hook_content.contains("git-pair hook") {
+            fs::remove_file(&hook_file)
+                .map_err(|e| format!("Error removing git hook: {}", e))?;
+        }
+    }
     
     Ok(())
 }
@@ -138,7 +207,10 @@ pub fn clear_coauthors() -> Result<String, String> {
         .args(&["config", "--unset", "commit.template"])
         .output();
     
-    Ok("Cleared all co-authors and removed commit template".to_string())
+    // Remove git hook
+    remove_git_hook()?;
+    
+    Ok("Cleared all co-authors, removed commit template, and uninstalled git hook".to_string())
 }
 
 pub fn get_coauthors() -> Result<Vec<String>, String> {
@@ -358,6 +430,14 @@ mod tests {
         let template_path = String::from_utf8(output.stdout).expect("Output should be valid UTF-8");
         assert!(template_path.contains(".git/git-pair/commit-template"));
         
+        // Check that git hook was installed
+        assert!(Path::new(".git/hooks/prepare-commit-msg").exists());
+        
+        let hook_content = fs::read_to_string(".git/hooks/prepare-commit-msg")
+            .expect("Hook file should exist");
+        assert!(hook_content.contains("git-pair hook"));
+        assert!(hook_content.contains("John Doe"));
+        
         // Clear and check git config was unset
         clear_coauthors().expect("Clear should succeed");
         
@@ -368,5 +448,40 @@ mod tests {
         
         // Should fail because config was unset
         assert!(!output.status.success());
+        
+        // Hook should be removed
+        assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
+    }
+
+    #[test]
+    fn test_git_hook_functionality() {
+        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        init_pair_config().expect("Init should succeed");
+        add_coauthor("Alice", "Johnson", "alice@example.com").expect("Add should succeed");
+        
+        // Create a test file and commit with -m flag
+        fs::write("test.txt", "test content").expect("Should write test file");
+        
+        Command::new("git")
+            .args(&["add", "test.txt"])
+            .output()
+            .expect("Git add should succeed");
+        
+        let output = Command::new("git")
+            .args(&["commit", "-m", "Test commit message"])
+            .output()
+            .expect("Git commit should succeed");
+        
+        assert!(output.status.success());
+        
+        // Check that the commit message includes co-author
+        let log_output = Command::new("git")
+            .args(&["log", "--pretty=format:%B", "-1"])
+            .output()
+            .expect("Git log should succeed");
+        
+        let commit_message = String::from_utf8(log_output.stdout).expect("Log output should be valid UTF-8");
+        assert!(commit_message.contains("Test commit message"));
+        assert!(commit_message.contains("Co-authored-by: Alice Johnson <alice@example.com>"));
     }
 }
