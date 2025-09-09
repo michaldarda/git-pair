@@ -439,46 +439,6 @@ mod tests {
         Ok(format!("Added co-author: {} <{}> to branch '{}'", full_name, email, branch_name))
     }
 
-    fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
-        let hooks_dir = working_dir.join(".git").join("hooks");
-        let hook_file = hooks_dir.join("prepare-commit-msg");
-        
-        // Create hooks directory if it doesn't exist
-        fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
-        
-        // Get current branch for the hook
-        let branch_name = get_current_branch_in(working_dir)?;
-        let config_file = working_dir.join(".git").join("git-pair").join(format!("config-{}", branch_name));
-        
-        // Create a functional hook that reads co-authors from config file
-        let hook_content = format!(
-            "#!/bin/sh\n\
-            # git-pair hook - appends co-authors from config file\n\
-            CONFIG_FILE=\"{}\"\n\
-            if [ -f \"$CONFIG_FILE\" ]; then\n\
-            \tgrep '^Co-authored-by:' \"$CONFIG_FILE\" >> \"$1\"\n\
-            fi\n",
-            config_file.display()
-        );
-        
-        fs::write(&hook_file, hook_content)
-            .map_err(|e| format!("Error writing git hook: {}", e))?;
-        
-        // Make the hook executable
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&hook_file)
-                .map_err(|e| format!("Error getting hook file permissions: {}", e))?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&hook_file, perms)
-                .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
-        }
-        
-        Ok(())
-    }
-
     fn get_coauthors_in(working_dir: &Path) -> Result<Vec<String>, String> {
         let config_file = get_branch_config_file_in(working_dir)?;
         let branch_name = get_current_branch_in(working_dir)?;
@@ -548,6 +508,46 @@ mod tests {
         
         // Add the coauthor
         add_coauthor_in(working_dir, &first_name, &last_name, email)
+    }
+
+    fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
+        let hooks_dir = working_dir.join(".git").join("hooks");
+        let hook_file = hooks_dir.join("prepare-commit-msg");
+        
+        // Create hooks directory if it doesn't exist
+        fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
+        
+        // Get current branch for the hook
+        let branch_name = get_current_branch_in(working_dir)?;
+        let config_file = working_dir.join(".git").join("git-pair").join(format!("config-{}", branch_name));
+        
+        // Create a functional hook that reads co-authors from config file
+        let hook_content = format!(
+            "#!/bin/sh\n\
+            # git-pair hook - appends co-authors from config file\n\
+            CONFIG_FILE=\"{}\"\n\
+            if [ -f \"$CONFIG_FILE\" ]; then\n\
+            \tgrep '^Co-authored-by:' \"$CONFIG_FILE\" >> \"$1\"\n\
+            fi\n",
+            config_file.display()
+        );
+        
+        fs::write(&hook_file, hook_content)
+            .map_err(|e| format!("Error writing git hook: {}", e))?;
+        
+        // Make the hook executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&hook_file)
+                .map_err(|e| format!("Error getting hook file permissions: {}", e))?
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&hook_file, perms)
+                .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
+        }
+        
+        Ok(())
     }
 
     // Test helper to create a temporary git repository without changing global cwd
