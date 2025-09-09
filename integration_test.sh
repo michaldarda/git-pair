@@ -105,9 +105,60 @@ if [[ ! "$ERROR_OUTPUT" == *"Not in a git repository"* ]]; then
     exit 1
 fi
 
+# Go back to test directory for global roster tests
+cd "$TEST_DIR"
+
+echo "✅ Test 10: Global roster - add entries"
+# Use a temporary HOME directory for testing to avoid polluting user's config
+TEMP_HOME=$(mktemp -d)
+export HOME="$TEMP_HOME"
+
+./git-pair add --global alice "Alice Johnson" alice@company.com
+./git-pair add --global bob "Bob Wilson" bob@company.com
+
+echo "✅ Test 11: Global roster - list entries"
+ROSTER_OUTPUT=$(./git-pair list --global)
+if [[ ! "$ROSTER_OUTPUT" == *"alice -> Alice Johnson"* ]] || [[ ! "$ROSTER_OUTPUT" == *"bob -> Bob Wilson"* ]]; then
+    echo "❌ Global roster listing failed"
+    echo "Output: $ROSTER_OUTPUT"
+    exit 1
+fi
+
+echo "✅ Test 12: Global roster - duplicate alias handling"
+ERROR_OUTPUT=$(./git-pair add --global alice "Alice Smith" alice.smith@company.com 2>&1 || true)
+if [[ ! "$ERROR_OUTPUT" == *"already exists"* ]]; then
+    echo "❌ Duplicate alias error handling failed"
+    echo "Error output: $ERROR_OUTPUT"
+    exit 1
+fi
+
+echo "✅ Test 13: Global roster - quick add"
+# Re-initialize since we cleared earlier
+./git-pair init
+./git-pair add alice
+./git-pair add bob
+
+QUICK_STATUS=$(./git-pair status)
+if [[ ! "$QUICK_STATUS" == *"Alice Johnson"* ]] || [[ ! "$QUICK_STATUS" == *"Bob Wilson"* ]]; then
+    echo "❌ Quick add from global roster failed"
+    echo "Status: $QUICK_STATUS"
+    exit 1
+fi
+
+echo "✅ Test 14: Global roster - non-existent alias"
+ERROR_OUTPUT=$(./git-pair add charlie 2>&1 || true)
+if [[ ! "$ERROR_OUTPUT" == *"not found in global roster"* ]]; then
+    echo "❌ Non-existent alias error handling failed"
+    echo "Error output: $ERROR_OUTPUT"
+    exit 1
+fi
+
+# Cleanup temporary HOME
+rm -rf "$TEMP_HOME"
+
 # Cleanup
 cd "$OLDPWD"
 rm -rf "$TEST_DIR"
 
-echo "🎉 All integration tests passed!"
-echo "🚀 git-pair is ready for use!"
+echo "🎉 All 14 integration tests passed!"
+echo "🚀 git-pair with global roster is ready for use!"

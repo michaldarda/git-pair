@@ -558,4 +558,76 @@ mod tests {
         // Hook should be removed
         assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
     }
+
+    #[test]
+    fn test_global_roster_add_and_list() {
+        // Use a temporary HOME directory for testing
+        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
+        let original_home = env::var("HOME").unwrap_or_default();
+        env::set_var("HOME", temp_home.path());
+        
+        // Test adding to global roster
+        let result = add_global_coauthor("alice", "Alice Johnson", "alice@example.com")
+            .expect("Should add to global roster");
+        assert!(result.contains("Added 'alice'"));
+        
+        // Test listing global roster
+        let roster = get_global_roster().expect("Should get global roster");
+        assert_eq!(roster.len(), 1);
+        assert_eq!(roster[0], ("alice".to_string(), "Alice Johnson".to_string(), "alice@example.com".to_string()));
+        
+        // Test duplicate alias
+        let result = add_global_coauthor("alice", "Alice Smith", "alice.smith@example.com");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("already exists"));
+        
+        // Restore original HOME
+        env::set_var("HOME", original_home);
+    }
+
+    #[test]
+    fn test_add_coauthor_from_global() {
+        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
+        let original_home = env::var("HOME").unwrap_or_default();
+        env::set_var("HOME", temp_home.path());
+        
+        // Initialize branch config
+        init_pair_config().expect("Init should succeed");
+        
+        // Add to global roster
+        add_global_coauthor("bob", "Bob Wilson", "bob@example.com")
+            .expect("Should add to global roster");
+        
+        // Test adding from global roster
+        let result = add_coauthor_from_global("bob").expect("Should add from global roster");
+        assert!(result.contains("Added co-author: Bob Wilson"));
+        
+        // Verify it was added to branch config
+        let coauthors = get_coauthors().expect("Should get coauthors");
+        assert_eq!(coauthors.len(), 1);
+        assert!(coauthors[0].contains("Bob Wilson"));
+        
+        // Test non-existent alias
+        let result = add_coauthor_from_global("charlie");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found in global roster"));
+        
+        // Restore original HOME
+        env::set_var("HOME", original_home);
+    }
+
+    #[test]
+    fn test_global_roster_empty() {
+        let temp_home = tempfile::tempdir().expect("Failed to create temp dir");
+        let original_home = env::var("HOME").unwrap_or_default();
+        env::set_var("HOME", temp_home.path());
+        
+        // Test empty global roster
+        let roster = get_global_roster().expect("Should get empty global roster");
+        assert!(roster.is_empty());
+        
+        // Restore original HOME
+        env::set_var("HOME", original_home);
+    }
 }
