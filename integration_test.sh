@@ -25,8 +25,9 @@ cp "$OLDPWD/target/release/git-pair" .
 
 echo "✅ Test 1: Initialize git-pair"
 ./git-pair init
-if [ ! -f ".git/git-pair/config" ]; then
-    echo "❌ Config file not created"
+# Check for branch-specific config file (should be config-master for default branch)
+if [ ! -f ".git/git-pair/config-master" ]; then
+    echo "❌ Branch-specific config file not created"
     exit 1
 fi
 
@@ -49,9 +50,19 @@ if [ ! -f ".git/hooks/prepare-commit-msg" ]; then
 fi
 
 HOOK_CONTENT=$(cat .git/hooks/prepare-commit-msg)
-if [[ ! "$HOOK_CONTENT" == *"John Doe"* ]] || [[ ! "$HOOK_CONTENT" == *"Jane Smith"* ]]; then
-    echo "❌ Git hook doesn't contain co-authors"
+# With per-branch config, the hook reads co-authors dynamically from config files
+# Check that the hook contains the dynamic logic instead of hard-coded names
+if [[ ! "$HOOK_CONTENT" == *"CURRENT_BRANCH"* ]] || [[ ! "$HOOK_CONTENT" == *"CONFIG_FILE"* ]]; then
+    echo "❌ Git hook doesn't contain per-branch logic"
     echo "Hook: $HOOK_CONTENT"
+    exit 1
+fi
+
+# Check that the branch-specific config file contains the co-authors
+CONFIG_CONTENT=$(cat .git/git-pair/config-master)
+if [[ ! "$CONFIG_CONTENT" == *"John Doe"* ]] || [[ ! "$CONFIG_CONTENT" == *"Jane Smith"* ]]; then
+    echo "❌ Branch config doesn't contain co-authors"
+    echo "Config: $CONFIG_CONTENT"
     exit 1
 fi
 
@@ -79,7 +90,7 @@ fi
 echo "✅ Test 8: Error handling - not initialized"
 rm -rf .git/git-pair
 ERROR_OUTPUT=$(./git-pair add Test User test@example.com 2>&1 || true)
-if [[ ! "$ERROR_OUTPUT" == *"not initialized"* ]]; then
+if [[ ! "$ERROR_OUTPUT" == *"not initialized for branch"* ]]; then
     echo "❌ Error handling for uninitialized state failed"
     echo "Error output: $ERROR_OUTPUT"
     exit 1

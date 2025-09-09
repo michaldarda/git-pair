@@ -453,7 +453,15 @@ mod tests {
         let hook_content = fs::read_to_string(".git/hooks/prepare-commit-msg")
             .expect("Hook file should exist");
         assert!(hook_content.contains("git-pair hook"));
-        assert!(hook_content.contains("John Doe"));
+        // With per-branch config, co-author names are read dynamically from config files
+        // so they won't be hard-coded in the hook
+        assert!(hook_content.contains("CURRENT_BRANCH"));
+        assert!(hook_content.contains("CONFIG_FILE"));
+        
+        // Check that the branch-specific config file contains the co-author
+        let branch_config = get_branch_config_file().expect("Should get branch config file");
+        let config_content = fs::read_to_string(&branch_config).expect("Config file should exist");
+        assert!(config_content.contains("John Doe"));
         
         // Clear and check hook was removed
         clear_coauthors().expect("Clear should succeed");
