@@ -49,6 +49,95 @@ fn get_branch_config_file() -> Result<PathBuf, String> {
     Ok(git_pair_dir.join(format!("config-{}", safe_branch_name)))
 }
 
+// Global roster management functions
+fn get_global_config_dir() -> Result<PathBuf, String> {
+    let home_dir = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let config_dir = PathBuf::from(home_dir).join(".config").join("git-pair");
+    Ok(config_dir)
+}
+
+fn get_global_roster_file() -> Result<PathBuf, String> {
+    let config_dir = get_global_config_dir()?;
+    Ok(config_dir.join("roster"))
+}
+
+pub fn add_global_coauthor(alias: &str, name: &str, email: &str) -> Result<String, String> {
+    let config_dir = get_global_config_dir()?;
+    let roster_file = get_global_roster_file()?;
+    
+    // Create config directory if it doesn't exist
+    fs::create_dir_all(&config_dir).map_err(|e| format!("Error creating global config directory: {}", e))?;
+    
+    // Read existing roster or create default content
+    let content = if roster_file.exists() {
+        fs::read_to_string(&roster_file)
+            .map_err(|e| format!("Error reading global roster: {}", e))?
+    } else {
+        "# Global git-pair roster\n# Format: alias|name|email\n".to_string()
+    };
+    
+    // Check if alias already exists
+    if content.lines().any(|line| {
+        line.starts_with(&format!("{}|", alias))
+    }) {
+        return Err(format!("Alias '{}' already exists in global roster", alias));
+    }
+    
+    // Add new entry
+    let new_entry = format!("{}|{}|{}\n", alias, name, email);
+    let new_content = content + &new_entry;
+    
+    fs::write(&roster_file, new_content)
+        .map_err(|e| format!("Error writing to global roster: {}", e))?;
+    
+    Ok(format!("Added '{}' ({} <{}>) to global roster", alias, name, email))
+}
+
+pub fn get_global_roster() -> Result<Vec<(String, String, String)>, String> {
+    let roster_file = get_global_roster_file()?;
+    
+    if !roster_file.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let content = fs::read_to_string(&roster_file)
+        .map_err(|e| format!("Error reading global roster: {}", e))?;
+    
+    let mut roster = Vec::new();
+    for line in content.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() == 3 {
+            roster.push((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()));
+        }
+    }
+    
+    Ok(roster)
+}
+
+pub fn add_coauthor_from_global(alias: &str) -> Result<String, String> {
+    let roster = get_global_roster()?;
+    
+    // Find the alias in the roster
+    if let Some((_, name, email)) = roster.iter().find(|(a, _, _)| a == alias) {
+        // Split name into first and last name for the existing add_coauthor function
+        let name_parts: Vec<&str> = name.split_whitespace().collect();
+        if name_parts.len() >= 2 {
+            let first_name = name_parts[0];
+            let last_name = name_parts[1..].join(" ");
+            add_coauthor(first_name, &last_name, email)
+        } else {
+            // If only one name, use it as first name and empty last name
+            add_coauthor(name, "", email)
+        }
+    } else {
+        Err(format!("Alias '{}' not found in global roster. Use 'git pair list --global' to see available aliases.", alias))
+    }
+}
+
 pub fn init_pair_config() -> Result<String, String> {
     let _current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
     let git_pair_dir = get_git_pair_dir()?;
