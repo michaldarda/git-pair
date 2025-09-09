@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub fn get_git_pair_dir() -> Result<PathBuf, String> {
     let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
@@ -13,33 +14,69 @@ pub fn get_git_pair_dir() -> Result<PathBuf, String> {
     Ok(git_dir.join("git-pair"))
 }
 
+fn get_current_branch() -> Result<String, String> {
+    let output = Command::new("git")
+        .args(&["branch", "--show-current"])
+        .output()
+        .map_err(|e| format!("Error getting current branch: {}", e))?;
+    
+    if !output.status.success() {
+        return Err("Failed to get current branch name".to_string());
+    }
+    
+    let branch_name = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Error parsing branch name: {}", e))?
+        .trim()
+        .to_string();
+    
+    if branch_name.is_empty() {
+        return Err("No branch name found (detached HEAD?)".to_string());
+    }
+    
+    Ok(branch_name)
+}
+
+fn get_branch_config_file() -> Result<PathBuf, String> {
+    let git_pair_dir = get_git_pair_dir()?;
+    let branch_name = get_current_branch()?;
+    
+    // Sanitize branch name for filename (replace problematic characters)
+    let safe_branch_name = branch_name
+        .replace('/', "_")
+        .replace('\\', "_")
+        .replace(':', "_");
+    
+    Ok(git_pair_dir.join(format!("config-{}", safe_branch_name)))
+}
+
 pub fn init_pair_config() -> Result<String, String> {
     let _current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
     let git_pair_dir = get_git_pair_dir()?;
+    let branch_name = get_current_branch()?;
     
     // Create .git/git-pair directory
     fs::create_dir_all(&git_pair_dir).map_err(|e| format!("Error creating git-pair directory: {}", e))?;
     
-    // Create config file
-    let config_file = git_pair_dir.join("config");
-    let default_config = "# git-pair configuration file\n# Co-authors will be listed here\n";
+    // Create branch-specific config file
+    let config_file = get_branch_config_file()?;
+    let default_config = format!("# git-pair configuration file for branch '{}'\n# Co-authors will be listed here\n", branch_name);
     
     if config_file.exists() {
-        Ok("git-pair already initialized in this repository".to_string())
+        Ok(format!("git-pair already initialized for branch '{}'", branch_name))
     } else {
         fs::write(&config_file, default_config)
             .map_err(|e| format!("Error creating config file: {}", e))?;
-        Ok(format!("Successfully initialized git-pair!\nConfiguration file created at: {}", config_file.display()))
+        Ok(format!("Successfully initialized git-pair for branch '{}'!\nConfiguration file created at: {}", branch_name, config_file.display()))
     }
 }
 
 pub fn add_coauthor(name: &str, surname: &str, email: &str) -> Result<String, String> {
-    let git_pair_dir = get_git_pair_dir()?;
-    let config_file = git_pair_dir.join("config");
+    let config_file = get_branch_config_file()?;
+    let branch_name = get_current_branch()?;
     
-    // Check if git-pair is initialized
+    // Check if git-pair is initialized for this branch
     if !config_file.exists() {
-        return Err("git-pair not initialized. Please run 'git-pair init' first.".to_string());
+        return Err(format!("git-pair not initialized for branch '{}'. Please run 'git-pair init' first.", branch_name));
     }
     
     // Read existing config
@@ -52,7 +89,7 @@ pub fn add_coauthor(name: &str, surname: &str, email: &str) -> Result<String, St
     
     // Check if this co-author already exists
     if existing_content.contains(&coauthor_line.trim()) {
-        return Ok(format!("Co-author '{}' <{}> already exists", full_name, email));
+        return Ok(format!("Co-author '{}' <{}> already exists on branch '{}'", full_name, email, branch_name));
     }
     
     // Append the new co-author
@@ -62,12 +99,11 @@ pub fn add_coauthor(name: &str, surname: &str, email: &str) -> Result<String, St
         .map_err(|e| format!("Error writing to config file: {}", e))?;
     
     update_commit_template()?;
-    Ok(format!("Added co-author: {} <{}>", full_name, email))
+    Ok(format!("Added co-author: {} <{}> to branch '{}'", full_name, email, branch_name))
 }
 
 pub fn update_commit_template() -> Result<(), String> {
-    let git_pair_dir = get_git_pair_dir()?;
-    let config_file = git_pair_dir.join("config");
+    let config_file = get_branch_config_file()?;
     
     // Read the config file to get co-authors
     let config_content = fs::read_to_string(&config_file)
@@ -82,17 +118,15 @@ pub fn update_commit_template() -> Result<(), String> {
     if coauthor_lines.is_empty() {
         // No co-authors, remove the hook
         remove_git_hook()?;
-        return Ok(());
+    } else {
+        // Install or update the hook with current co-authors
+        install_git_hook(&coauthor_lines)?;
     }
-    
-    // Install Git hook for automatic co-author appending
-    install_git_hook(&coauthor_lines)?;
     
     Ok(())
 }
 
-fn install_git_hook(coauthor_lines: &[&str]) -> Result<(), String> {
-    use std::process::Command;
+fn install_git_hook(_coauthor_lines: &[&str]) -> Result<(), String> {
     let current_dir = env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
     let hooks_dir = current_dir.join(".git").join("hooks");
     let hook_file = hooks_dir.join("prepare-commit-msg");
@@ -100,7 +134,7 @@ fn install_git_hook(coauthor_lines: &[&str]) -> Result<(), String> {
     // Create hooks directory if it doesn't exist
     fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
     
-    // Create the hook script
+    // Create the hook script that dynamically reads branch-specific config
     let mut hook_content = String::new();
     hook_content.push_str("#!/bin/sh\n");
     hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
@@ -110,13 +144,18 @@ fn install_git_hook(coauthor_lines: &[&str]) -> Result<(), String> {
     hook_content.push_str("if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n");
     hook_content.push_str("  # Check if co-authors are already present\n");
     hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
-    hook_content.push_str("    # Add co-authors from git-pair config\n");
-    hook_content.push_str("    echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
-    
-    for coauthor in coauthor_lines {
-        hook_content.push_str(&format!("    echo \"{}\" >> \"$COMMIT_MSG_FILE\"\n", coauthor));
-    }
-    
+    hook_content.push_str("    # Get current branch and config file\n");
+    hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
+    hook_content.push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
+    hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
+    hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
+    hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
+    hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
+    hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
+    hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
+    hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
+    hook_content.push_str("      fi\n");
+    hook_content.push_str("    fi\n");
     hook_content.push_str("  fi\n");
     hook_content.push_str("fi\n");
     
@@ -158,31 +197,31 @@ fn remove_git_hook() -> Result<(), String> {
 }
 
 pub fn clear_coauthors() -> Result<String, String> {
-    let git_pair_dir = get_git_pair_dir()?;
-    let config_file = git_pair_dir.join("config");
+    let config_file = get_branch_config_file()?;
+    let branch_name = get_current_branch()?;
     
-    // Check if git-pair is initialized
+    // Check if git-pair is initialized for this branch
     if !config_file.exists() {
-        return Err("git-pair not initialized. Please run 'git-pair init' first.".to_string());
+        return Err(format!("git-pair not initialized for branch '{}'. Please run 'git-pair init' first.", branch_name));
     }
     
     // Reset config file to default content
-    let default_config = "# git-pair configuration file\n# Co-authors will be listed here\n";
+    let default_config = format!("# git-pair configuration file for branch '{}'\n# Co-authors will be listed here\n", branch_name);
     fs::write(&config_file, default_config)
         .map_err(|e| format!("Error clearing config file: {}", e))?;
     
     // Remove git hook
     remove_git_hook()?;
     
-    Ok("Cleared all co-authors and uninstalled git hook".to_string())
+    Ok(format!("Cleared all co-authors for branch '{}' and uninstalled git hook", branch_name))
 }
 
 pub fn get_coauthors() -> Result<Vec<String>, String> {
-    let git_pair_dir = get_git_pair_dir()?;
-    let config_file = git_pair_dir.join("config");
+    let config_file = get_branch_config_file()?;
+    let branch_name = get_current_branch()?;
     
     if !config_file.exists() {
-        return Err("git-pair not initialized. Please run 'git-pair init' first.".to_string());
+        return Err(format!("git-pair not initialized for branch '{}'. Please run 'git-pair init' first.", branch_name));
     }
     
     let config_content = fs::read_to_string(&config_file)
@@ -236,15 +275,18 @@ mod tests {
         let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
         
         let result = init_pair_config().expect("Init should succeed");
-        assert!(result.contains("Successfully initialized git-pair!"));
+        assert!(result.contains("Successfully initialized git-pair for branch"));
         
         // Check that files were created
         assert!(Path::new(".git/git-pair").exists());
-        assert!(Path::new(".git/git-pair/config").exists());
+        
+        // Check branch-specific config file exists (should be config-main for default branch)
+        let branch_config = get_branch_config_file().expect("Should get branch config file");
+        assert!(branch_config.exists());
         
         // Check config file content
-        let config_content = fs::read_to_string(".git/git-pair/config").expect("Config file should exist");
-        assert!(config_content.contains("# git-pair configuration file"));
+        let config_content = fs::read_to_string(&branch_config).expect("Config file should exist");
+        assert!(config_content.contains("# git-pair configuration file for branch"));
     }
 
     #[test]
@@ -277,8 +319,9 @@ mod tests {
         let result = add_coauthor("John", "Doe", "john.doe@example.com").expect("Add should succeed");
         assert!(result.contains("Added co-author: John Doe"));
         
-        // Check config file was updated
-        let config_content = fs::read_to_string(".git/git-pair/config").expect("Config file should exist");
+        // Check branch-specific config file was updated
+        let branch_config = get_branch_config_file().expect("Should get branch config file");
+        let config_content = fs::read_to_string(&branch_config).expect("Config file should exist");
         assert!(config_content.contains("Co-authored-by: John Doe <john.doe@example.com>"));
         
         // Check git hook was installed
