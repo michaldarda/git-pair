@@ -12,6 +12,7 @@ A Git extension for managing pair programming sessions. Easily configure Git to 
 - 🌿 **Per-branch co-authors**: Different co-authors for different branches - perfect for feature teams
 - 👥 **Multiple authors**: Add multiple co-authors to your commits
 - 🔄 **Automatic switching**: Co-authors change automatically when you switch branches
+- ⚡ **Global roster**: Save frequently used co-authors with aliases for quick access across all repositories
 - 🧹 **Clean state management**: Clear pair configuration per branch when switching between solo and pair work
 - 📝 **Proper attribution**: Follows Git's standard Co-authored-by trailer format
 - ⚡ **Fast and lightweight**: Written in Rust for optimal performance
@@ -47,8 +48,13 @@ Initializes pair programming mode for the current branch. Each branch maintains 
 ### Add Co-authors
 
 ```bash
+# Add co-authors directly
 git pair add "Jane Doe" jane.doe@company.com
 git pair add "John Smith" john.smith@company.com
+
+# Or add from global roster using aliases
+git pair add jane    # Adds Jane Doe from global roster
+git pair add john    # Adds John Smith from global roster
 ```
 
 Adds co-authors to the current branch's pair programming session. Co-authors are branch-specific, so switching branches will use different co-author configurations.
@@ -68,6 +74,13 @@ git pair status
 ```
 
 Displays the currently configured co-authors and pair programming status.
+
+### Help and Version
+
+```bash
+git pair --help     # Show comprehensive help
+git pair --version  # Show version information
+```
 
 ## How It Works
 
@@ -110,6 +123,9 @@ Example configuration structure:
 ├── config-main                    # Co-authors for main branch
 ├── config-feature_auth            # Co-authors for feature/auth branch  
 └── config-bugfix_login            # Co-authors for bugfix/login branch
+
+~/.config/git-pair/
+└── roster                         # Global roster of saved co-authors
 ```
 
 ## Per-Branch Benefits
@@ -134,9 +150,26 @@ The per-branch co-author system enables powerful workflows:
 | Command | Description |
 |---------|-------------|
 | `git pair init` | Initialize pair programming for current branch |
-| `git pair add <name> <email>` | Add a co-author to the current branch |
+| `git pair add <name> <surname> <email>` | Add a co-author to the current branch |
+| `git pair add <alias>` | Add co-author from global roster using alias |
+| `git pair add --global <alias> <name> <email>` | Add a co-author to global roster |
 | `git pair clear` | Remove all co-authors from current branch |
 | `git pair status` | Show current branch's pair configuration |
+| `git pair list --global` | Show global roster of saved co-authors |
+| `git pair --version, -V` | Show version information |
+| `git pair --help, -h` | Show help information |
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GIT_PAIR_ROSTER_FILE` | Override global roster file location | `~/.config/git-pair/roster` |
+
+Example:
+```bash
+# Use custom roster file for testing or different environments
+GIT_PAIR_ROSTER_FILE=/tmp/test-roster git pair add --global test "Test User" test@example.com
+```
 
 ## Examples
 
@@ -153,22 +186,45 @@ git pair add "Alice Johnson" alice@company.com
 git commit -m "Add new feature"
 ```
 
+### Using Global Roster
+
+```bash
+# Set up your global roster once
+git pair add --global alice "Alice Johnson" alice@company.com
+git pair add --global bob "Bob Wilson" bob@company.com
+git pair add --global sarah "Sarah Chen" sarah@company.com
+
+# View your roster
+git pair list --global
+# Output:
+# Global roster:
+#   alice -> Alice Johnson <alice@company.com>
+#   bob -> Bob Wilson <bob@company.com>
+#   sarah -> Sarah Chen <sarah@company.com>
+
+# Quick setup in any repository
+git pair init
+git pair add alice bob    # Adds both Alice and Bob quickly!
+
+# Make commits - co-authors automatically included
+git commit -m "Implement new feature"
+```
+
 ### Per-Branch Team Configuration
 
 ```bash
-# On main branch - set up core team
+# On main branch - set up core team using global roster
 git checkout main
 git pair init
-git pair add "Alice Johnson" alice@company.com
-git pair add "Bob Wilson" bob@company.com
+git pair add alice bob    # Quick add from global roster
 
 # Switch to feature branch - set up feature team  
 git checkout -b feature/authentication
 git pair init
-git pair add "Carol Davis" carol@company.com
-git pair add "Dave Miller" dave@company.com
+git pair add sarah        # Add Sarah from global roster
+git pair add "Carol Davis" carol@company.com  # Add directly
 
-# Commits on feature branch include Carol and Dave
+# Commits on feature branch include Sarah and Carol
 git commit -m "Implement login system"
 
 # Switch back to main - automatically uses Alice and Bob
@@ -182,9 +238,8 @@ git commit -m "Update documentation"
 
 ```bash
 # Add multiple co-authors for mob programming on current branch
-git pair add "Bob Wilson" bob@company.com
-git pair add "Carol Davis" carol@company.com
-git pair add "Dave Miller" dave@company.com
+git pair add bob carol dave    # Mix of roster aliases and direct names
+git pair add "Eve Foster" eve@company.com
 
 # Check current branch's status
 git pair status
@@ -233,6 +288,7 @@ While there are existing solutions, `git-pair` aims to be:
 
 - **Simple**: Minimal commands, maximum productivity
 - **Per-branch**: Unique branch-specific co-author configuration - perfect for teams working on multiple features
+- **Global roster**: Save frequent collaborators with aliases for lightning-fast setup
 - **Fast**: Written in Rust for optimal performance
 - **Standard**: Uses Git's built-in Co-authored-by trailer format
 - **Local**: Repository-specific configuration without global pollution
