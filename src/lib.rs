@@ -654,23 +654,34 @@ mod tests {
         fs::create_dir_all(&hooks_dir)
             .map_err(|e| format!("Error creating hooks directory: {}", e))?;
 
-        // Get current branch for the hook
-        let branch_name = get_current_branch_in(working_dir)?;
-        let config_file = working_dir
-            .join(".git")
-            .join("git-pair")
-            .join(format!("config-{}", branch_name));
-
-        // Create a functional hook that reads co-authors from config file
-        let hook_content = format!(
-            "#!/bin/sh\n\
-            # git-pair hook - appends co-authors from config file\n\
-            CONFIG_FILE=\"{}\"\n\
-            if [ -f \"$CONFIG_FILE\" ]; then\n\
-            \tgrep '^Co-authored-by:' \"$CONFIG_FILE\" >> \"$1\"\n\
-            fi\n",
-            config_file.display()
+        // Create the hook script that dynamically reads branch-specific config
+        let mut hook_content = String::new();
+        hook_content.push_str("#!/bin/sh\n");
+        hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
+        hook_content.push_str("COMMIT_MSG_FILE=$1\n");
+        hook_content.push_str("COMMIT_SOURCE=$2\n\n");
+        hook_content
+            .push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
+        hook_content.push_str(
+            "if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n",
         );
+        hook_content.push_str("  # Check if co-authors are already present\n");
+        hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
+        hook_content.push_str("    # Get current branch and config file\n");
+        hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
+        hook_content
+            .push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
+        hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
+        hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
+        hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
+        hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
+        hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
+        hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
+        hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
+        hook_content.push_str("      fi\n");
+        hook_content.push_str("    fi\n");
+        hook_content.push_str("  fi\n");
+        hook_content.push_str("fi\n");
 
         fs::write(&hook_file, hook_content)
             .map_err(|e| format!("Error writing git hook: {}", e))?;
@@ -912,31 +923,35 @@ mod tests {
 
     #[test]
     fn test_git_config_integration() {
-        let _temp_dir = setup_test_repo().expect("Failed to setup test repo");
-        init_pair_config().expect("Init should succeed");
-        add_coauthor("John", "Doe", "john.doe@example.com").expect("Add should succeed");
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
 
         // Check that git hook was installed
-        assert!(Path::new(".git/hooks/prepare-commit-msg").exists());
+        assert!(test_dir.join(".git/hooks/prepare-commit-msg").exists());
 
-        let hook_content =
-            fs::read_to_string(".git/hooks/prepare-commit-msg").expect("Hook file should exist");
+        let hook_content = fs::read_to_string(test_dir.join(".git/hooks/prepare-commit-msg"))
+            .expect("Hook file should exist");
         assert!(hook_content.contains("git-pair hook"));
         // With per-branch config, co-author names are read dynamically from config files
         // so they won't be hard-coded in the hook
-        assert!(hook_content.contains("CURRENT_BRANCH"));
         assert!(hook_content.contains("CONFIG_FILE"));
+        assert!(hook_content.contains("grep '^Co-authored-by:'"));
 
         // Check that the branch-specific config file contains the co-author
-        let branch_config = get_branch_config_file().expect("Should get branch config file");
+        let branch_config =
+            get_branch_config_file_in(test_dir).expect("Should get branch config file");
         let config_content = fs::read_to_string(&branch_config).expect("Config file should exist");
         assert!(config_content.contains("John Doe"));
 
         // Clear and check hook was removed
-        clear_coauthors().expect("Clear should succeed");
+        clear_coauthors_in(test_dir).expect("Clear should succeed");
 
         // Hook should be removed
-        assert!(!Path::new(".git/hooks/prepare-commit-msg").exists());
+        assert!(!test_dir.join(".git/hooks/prepare-commit-msg").exists());
     }
 
     #[test]
