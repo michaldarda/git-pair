@@ -104,7 +104,8 @@ fn main() {
 }
 
 fn print_help() {
-    let help_text = format!(r#"git-pair {}
+    let help_text = format!(
+        r#"git-pair {}
 A git extension for pair programming with per-branch co-author management
 
 USAGE:
@@ -131,7 +132,9 @@ EXAMPLES:
     git-pair add alice
     git-pair status
     git-pair list --global
-"#, env!("CARGO_PKG_VERSION"));
-    
+"#,
+        env!("CARGO_PKG_VERSION")
+    );
+
     print!("{}", help_text);
 }
