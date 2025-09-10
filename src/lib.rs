@@ -336,12 +336,58 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     // Mutex to ensure global roster tests don't interfere with each other
     static GLOBAL_ROSTER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    // Simple RAII wrapper for temporary directories
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> std::io::Result<Self> {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            
+            let mut temp_path = env::temp_dir();
+            temp_path.push(format!("git-pair-test-{}-{}", std::process::id(), timestamp));
+            
+            fs::create_dir_all(&temp_path)?;
+            Ok(TempDir { path: temp_path })
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    // Simple temporary file helper
+    fn create_temp_file() -> std::io::Result<PathBuf> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        
+        let mut temp_path = env::temp_dir();
+        temp_path.push(format!("git-pair-test-{}-{}", std::process::id(), timestamp));
+        
+        // Create empty file
+        fs::write(&temp_path, "")?;
+        Ok(temp_path)
+    }
 
     // Test helper functions that work with a specific directory instead of changing global cwd
     fn get_git_pair_dir_in(working_dir: &Path) -> Result<PathBuf, String> {
@@ -551,9 +597,9 @@ mod tests {
     }
 
     // Test helper to create a temporary git repository without changing global cwd
-    fn setup_test_repo() -> std::io::Result<tempfile::TempDir> {
+    fn setup_test_repo() -> std::io::Result<TempDir> {
         use std::process::Command;
-        let temp_dir = tempfile::tempdir()?;
+        let temp_dir = TempDir::new()?;
         let repo_path = temp_dir.path();
         
         // Initialize git repo in the temp directory (without changing global cwd)
@@ -609,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_init_pair_config_not_git_repo() {
-        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
         
         let result = init_pair_config_in(temp_dir.path());
         assert!(result.is_err());
@@ -795,9 +841,8 @@ mod tests {
         let _lock = GLOBAL_ROSTER_TEST_LOCK.lock().unwrap();
         
         // Use a temporary roster file for testing
-        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        let temp_path = temp_file.path().to_str().unwrap();
-        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
+        let temp_path = create_temp_file().expect("Failed to create temp file");
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path.to_str().unwrap());
         
         // Test adding to global roster
         let result = add_global_coauthor("alice", "Alice Johnson", "alice@example.com")
@@ -824,9 +869,8 @@ mod tests {
         
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        let temp_path = temp_file.path().to_str().unwrap();
-        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
+        let temp_path = create_temp_file().expect("Failed to create temp file");
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path.to_str().unwrap());
         
         // Initialize branch config
         init_pair_config_in(&test_dir).expect("Init should succeed");
@@ -857,12 +901,11 @@ mod tests {
     fn test_global_roster_empty() {
         let _lock = GLOBAL_ROSTER_TEST_LOCK.lock().unwrap();
         
-        let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        let temp_path = temp_file.path().to_str().unwrap();
-        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path);
+        let temp_path = create_temp_file().expect("Failed to create temp file");
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path.to_str().unwrap());
         
         // Remove the file to test truly empty state
-        fs::remove_file(temp_path).ok();
+        fs::remove_file(&temp_path).ok();
         
         // Test empty global roster
         let roster = get_global_roster().expect("Should get empty global roster");
