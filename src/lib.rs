@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn get_git_pair_dir() -> Result<PathBuf, String> {
@@ -243,70 +243,16 @@ pub fn update_commit_template() -> Result<(), String> {
         remove_git_hook()?;
     } else {
         // Install or update the hook with current co-authors
-        install_git_hook(&coauthor_lines)?;
+        let current_dir =
+            env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
+        install_git_hook_in(&current_dir)?;
     }
 
     Ok(())
 }
 
-fn install_git_hook(_coauthor_lines: &[&str]) -> Result<(), String> {
-    let current_dir =
-        env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
-    let hooks_dir = current_dir.join(".git").join("hooks");
-    let hook_file = hooks_dir.join("prepare-commit-msg");
-
-    // Create hooks directory if it doesn't exist
-    fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
-
-    // Create the hook script that dynamically reads branch-specific config
-    let mut hook_content = String::new();
-    hook_content.push_str("#!/bin/sh\n");
-    hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
-    hook_content.push_str("COMMIT_MSG_FILE=$1\n");
-    hook_content.push_str("COMMIT_SOURCE=$2\n\n");
-    hook_content
-        .push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
-    hook_content
-        .push_str("if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n");
-    hook_content.push_str("  # Check if co-authors are already present\n");
-    hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
-    hook_content.push_str("    # Get current branch and config file\n");
-    hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
-    hook_content.push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
-    hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
-    hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
-    hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
-    hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
-    hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
-    hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
-    hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
-    hook_content.push_str("      fi\n");
-    hook_content.push_str("    fi\n");
-    hook_content.push_str("  fi\n");
-    hook_content.push_str("fi\n");
-
-    // Write the hook file
-    fs::write(&hook_file, hook_content).map_err(|e| format!("Error writing git hook: {}", e))?;
-
-    // Make the hook executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&hook_file)
-            .map_err(|e| format!("Error getting hook file permissions: {}", e))?
-            .permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&hook_file, perms)
-            .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
-    }
-
-    Ok(())
-}
-
-fn remove_git_hook() -> Result<(), String> {
-    let current_dir =
-        env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
-    let hook_file = current_dir
+fn remove_git_hook_in(working_dir: &Path) -> Result<(), String> {
+    let hook_file = working_dir
         .join(".git")
         .join("hooks")
         .join("prepare-commit-msg");
@@ -322,6 +268,12 @@ fn remove_git_hook() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn remove_git_hook() -> Result<(), String> {
+    let current_dir =
+        env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
+    remove_git_hook_in(&current_dir)
 }
 
 pub fn clear_coauthors() -> Result<String, String> {
@@ -374,6 +326,57 @@ pub fn get_coauthors() -> Result<Vec<String>, String> {
         .collect();
 
     Ok(coauthors)
+}
+
+fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
+    let hooks_dir = working_dir.join(".git").join("hooks");
+    let hook_file = hooks_dir.join("prepare-commit-msg");
+
+    // Create hooks directory if it doesn't exist
+    fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
+
+    // Create the hook script that dynamically reads branch-specific config
+    let mut hook_content = String::new();
+    hook_content.push_str("#!/bin/sh\n");
+    hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
+    hook_content.push_str("COMMIT_MSG_FILE=$1\n");
+    hook_content.push_str("COMMIT_SOURCE=$2\n\n");
+    hook_content
+        .push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
+    hook_content
+        .push_str("if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n");
+    hook_content.push_str("  # Check if co-authors are already present\n");
+    hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
+    hook_content.push_str("    # Get current branch and config file\n");
+    hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
+    hook_content.push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
+    hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
+    hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
+    hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
+    hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
+    hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
+    hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
+    hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
+    hook_content.push_str("      fi\n");
+    hook_content.push_str("    fi\n");
+    hook_content.push_str("  fi\n");
+    hook_content.push_str("fi\n");
+
+    fs::write(&hook_file, hook_content).map_err(|e| format!("Error writing git hook: {}", e))?;
+
+    // Make the hook executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook_file)
+            .map_err(|e| format!("Error getting hook file permissions: {}", e))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook_file, perms)
+            .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -548,7 +551,7 @@ mod tests {
         fs::write(&config_file, new_content)
             .map_err(|e| format!("Error writing to config file: {}", e))?;
 
-        // Install/update hook (simplified for tests - just create the hook file)
+        // Install/update hook
         install_git_hook_in(working_dir)?;
         Ok(format!(
             "Added co-author: {} <{}> to branch '{}'",
@@ -600,13 +603,7 @@ mod tests {
             .map_err(|e| format!("Error clearing config file: {}", e))?;
 
         // Remove git hook
-        let hook_file = working_dir
-            .join(".git")
-            .join("hooks")
-            .join("prepare-commit-msg");
-        if hook_file.exists() {
-            fs::remove_file(hook_file).map_err(|e| format!("Error removing git hook: {}", e))?;
-        }
+        remove_git_hook_in(working_dir)?;
 
         Ok(format!(
             "Cleared all co-authors for branch '{}' and uninstalled git hook",
@@ -644,61 +641,6 @@ mod tests {
 
         // Add the coauthor
         add_coauthor_in(working_dir, &first_name, &last_name, email)
-    }
-
-    fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
-        let hooks_dir = working_dir.join(".git").join("hooks");
-        let hook_file = hooks_dir.join("prepare-commit-msg");
-
-        // Create hooks directory if it doesn't exist
-        fs::create_dir_all(&hooks_dir)
-            .map_err(|e| format!("Error creating hooks directory: {}", e))?;
-
-        // Create the hook script that dynamically reads branch-specific config
-        let mut hook_content = String::new();
-        hook_content.push_str("#!/bin/sh\n");
-        hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
-        hook_content.push_str("COMMIT_MSG_FILE=$1\n");
-        hook_content.push_str("COMMIT_SOURCE=$2\n\n");
-        hook_content
-            .push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
-        hook_content.push_str(
-            "if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n",
-        );
-        hook_content.push_str("  # Check if co-authors are already present\n");
-        hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
-        hook_content.push_str("    # Get current branch and config file\n");
-        hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
-        hook_content
-            .push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
-        hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
-        hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
-        hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
-        hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
-        hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
-        hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
-        hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
-        hook_content.push_str("      fi\n");
-        hook_content.push_str("    fi\n");
-        hook_content.push_str("  fi\n");
-        hook_content.push_str("fi\n");
-
-        fs::write(&hook_file, hook_content)
-            .map_err(|e| format!("Error writing git hook: {}", e))?;
-
-        // Make the hook executable
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&hook_file)
-                .map_err(|e| format!("Error getting hook file permissions: {}", e))?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&hook_file, perms)
-                .map_err(|e| format!("Error setting hook file permissions: {}", e))?;
-        }
-
-        Ok(())
     }
 
     // Test helper to create a temporary git repository without changing global cwd
