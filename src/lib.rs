@@ -336,31 +336,32 @@ fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
 
     // Create the hook script that dynamically reads branch-specific config
-    let mut hook_content = String::new();
-    hook_content.push_str("#!/bin/sh\n");
-    hook_content.push_str("# git-pair hook to automatically add co-authors\n\n");
-    hook_content.push_str("COMMIT_MSG_FILE=$1\n");
-    hook_content.push_str("COMMIT_SOURCE=$2\n\n");
-    hook_content
-        .push_str("# Only add co-authors for regular commits (not merges, rebases, etc.)\n");
-    hook_content
-        .push_str("if [ -z \"$COMMIT_SOURCE\" ] || [ \"$COMMIT_SOURCE\" = \"message\" ]; then\n");
-    hook_content.push_str("  # Check if co-authors are already present\n");
-    hook_content.push_str("  if ! grep -q \"Co-authored-by:\" \"$COMMIT_MSG_FILE\"; then\n");
-    hook_content.push_str("    # Get current branch and config file\n");
-    hook_content.push_str("    CURRENT_BRANCH=$(git branch --show-current)\n");
-    hook_content.push_str("    SAFE_BRANCH=$(echo \"$CURRENT_BRANCH\" | sed 's/[/\\\\:]/_/g')\n");
-    hook_content.push_str("    CONFIG_FILE=\".git/git-pair/config-$SAFE_BRANCH\"\n\n");
-    hook_content.push_str("    # Add co-authors from branch-specific config if it exists\n");
-    hook_content.push_str("    if [ -f \"$CONFIG_FILE\" ]; then\n");
-    hook_content.push_str("      COAUTHORS=$(grep '^Co-authored-by:' \"$CONFIG_FILE\")\n");
-    hook_content.push_str("      if [ -n \"$COAUTHORS\" ]; then\n");
-    hook_content.push_str("        echo \"\" >> \"$COMMIT_MSG_FILE\"\n");
-    hook_content.push_str("        echo \"$COAUTHORS\" >> \"$COMMIT_MSG_FILE\"\n");
-    hook_content.push_str("      fi\n");
-    hook_content.push_str("    fi\n");
-    hook_content.push_str("  fi\n");
-    hook_content.push_str("fi\n");
+    let hook_content = r#"#!/bin/sh
+# git-pair hook to automatically add co-authors
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+
+# Only add co-authors for regular commits (not merges, rebases, etc.)
+if [ -z "$COMMIT_SOURCE" ] || [ "$COMMIT_SOURCE" = "message" ]; then
+  # Check if co-authors are already present
+  if ! grep -q "Co-authored-by:" "$COMMIT_MSG_FILE"; then
+    # Get current branch and config file
+    CURRENT_BRANCH=$(git branch --show-current)
+    SAFE_BRANCH=$(echo "$CURRENT_BRANCH" | sed 's/[/\\:]/_/g')
+    CONFIG_FILE=".git/git-pair/config-$SAFE_BRANCH"
+
+    # Add co-authors from branch-specific config if it exists
+    if [ -f "$CONFIG_FILE" ]; then
+      COAUTHORS=$(grep '^Co-authored-by:' "$CONFIG_FILE")
+      if [ -n "$COAUTHORS" ]; then
+        echo "" >> "$COMMIT_MSG_FILE"
+        echo "$COAUTHORS" >> "$COMMIT_MSG_FILE"
+      fi
+    fi
+  fi
+fi
+"#;
 
     fs::write(&hook_file, hook_content).map_err(|e| format!("Error writing git hook: {}", e))?;
 
