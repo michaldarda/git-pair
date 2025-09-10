@@ -20,19 +20,53 @@ A Git extension for managing pair programming sessions. Easily configure Git to 
 
 ## Installation
 
-### From Source
+### Quick Install (Recommended)
+
+Install git-pair with a single command:
+
+```bash
+curl -sSf https://raw.githubusercontent.com/michaldarda/git-pair/master/install.sh | sh
+```
+
+Or with wget:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/michaldarda/git-pair/master/install.sh | sh
+```
+
+This will:
+- 🔍 Auto-detect your platform (Linux, macOS, Windows)
+- 📦 Download the latest release binary
+- 🔧 Install to `~/.local/bin/git-pair`
+- 📋 Provide instructions to add to your PATH
+
+### Manual Installation
+
+#### Download from Releases
+
+1. Go to [Releases](https://github.com/michaldarda/git-pair/releases)
+2. Download the appropriate binary for your platform
+3. Extract and place in your PATH
+
+#### From Source
 
 ```bash
 git clone https://github.com/michaldarda/git-pair.git
 cd git-pair
 cargo build --release
-cp target/release/git-pair /usr/local/bin/
+cp target/release/git-pair ~/.local/bin/
 ```
 
-### Using Cargo
+#### Using Cargo
 
 ```bash
 cargo install git-pair
+```
+
+### Uninstall
+
+```bash
+curl -sSf https://raw.githubusercontent.com/michaldarda/git-pair/master/uninstall.sh | sh
 ```
 
 ## Usage
