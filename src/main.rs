@@ -104,33 +104,34 @@ fn main() {
 }
 
 fn print_help() {
-    println!("git-pair {}", env!("CARGO_PKG_VERSION"));
-    println!("A git extension for pair programming with per-branch co-author management");
-    println!();
-    println!("USAGE:");
-    println!("    git-pair <COMMAND>");
-    println!();
-    println!("COMMANDS:");
-    println!("    init                                    Initialize git-pair for current branch");
-    println!("    add <name> <surname> <email>            Add a co-author to current branch");
-    println!("    add <alias>                             Add co-author from global roster");
-    println!("    add --global <alias> <name> <email>     Add co-author to global roster");
-    println!(
-        "    clear                                   Remove all co-authors from current branch"
-    );
-    println!("    status                                  Show current branch co-authors");
-    println!("    list --global                           Show global roster");
-    println!("    help, --help, -h                        Show this help message");
-    println!("    --version, -V                           Show version information");
-    println!();
-    println!("ENVIRONMENT VARIABLES:");
-    println!("    GIT_PAIR_ROSTER_FILE                    Override global roster file location");
-    println!();
-    println!("EXAMPLES:");
-    println!("    git-pair init");
-    println!("    git-pair add John Doe john.doe@company.com");
-    println!("    git-pair add --global alice \"Alice Johnson\" alice@company.com");
-    println!("    git-pair add alice");
-    println!("    git-pair status");
-    println!("    git-pair list --global");
+    let help_text = format!(r#"git-pair {}
+A git extension for pair programming with per-branch co-author management
+
+USAGE:
+    git-pair <COMMAND>
+
+COMMANDS:
+    init                                    Initialize git-pair for current branch
+    add <name> <surname> <email>            Add a co-author to current branch
+    add <alias>                             Add co-author from global roster
+    add --global <alias> <name> <email>     Add co-author to global roster
+    clear                                   Remove all co-authors from current branch
+    status                                  Show current branch co-authors
+    list --global                           Show global roster
+    help, --help, -h                        Show this help message
+    --version, -V                           Show version information
+
+ENVIRONMENT VARIABLES:
+    GIT_PAIR_ROSTER_FILE                    Override global roster file location
+
+EXAMPLES:
+    git-pair init
+    git-pair add John Doe john.doe@company.com
+    git-pair add --global alice "Alice Johnson" alice@company.com
+    git-pair add alice
+    git-pair status
+    git-pair list --global
+"#, env!("CARGO_PKG_VERSION"));
+    
+    print!("{}", help_text);
 }
