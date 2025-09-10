@@ -2,5 +2,18 @@
 name = "git-pair"
 version = "0.1.0"
 edition = "2021"
+description = "A Git extension for managing pair programming sessions with per-branch co-author configuration"
+license = "MIT"
+repository = "https://github.com/michaldarda/git-pair"
+homepage = "https://github.com/michaldarda/git-pair"
+documentation = "https://github.com/michaldarda/git-pair"
+readme = "README.md"
+keywords = ["git", "pair-programming", "collaboration", "vcs", "development"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Michal Darda <michaldarda@gmail.com>"]
+
+[[bin]]
+name = "git-pair"
+path = "src/main.rs"
 
 [dependencies]
