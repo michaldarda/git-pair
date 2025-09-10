@@ -1,9 +1,12 @@
-use git_pair::{init_pair_config, add_coauthor, clear_coauthors, get_coauthors, add_global_coauthor, get_global_roster, add_coauthor_from_global};
+use git_pair::{
+    add_coauthor, add_coauthor_from_global, add_global_coauthor, clear_coauthors, get_coauthors,
+    get_global_roster, init_pair_config,
+};
 use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    
+
     if args.len() > 1 {
         match args[1].as_str() {
             "--version" | "-V" => {
@@ -12,12 +15,10 @@ fn main() {
             "--help" | "-h" | "help" => {
                 print_help();
             }
-            "init" => {
-                match init_pair_config() {
-                    Ok(message) => println!("{}", message),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
+            "init" => match init_pair_config() {
+                Ok(message) => println!("{}", message),
+                Err(e) => eprintln!("Error: {}", e),
+            },
             "add" => {
                 if args.len() >= 3 && args[2] == "--global" {
                     // Global add: git pair add --global alice "Alice Johnson" alice@company.com
@@ -54,12 +55,10 @@ fn main() {
                     eprintln!("   or: git-pair add --global <alias> <name> <email>");
                 }
             }
-            "clear" => {
-                match clear_coauthors() {
-                    Ok(message) => println!("{}", message),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
+            "clear" => match clear_coauthors() {
+                Ok(message) => println!("{}", message),
+                Err(e) => eprintln!("Error: {}", e),
+            },
             "status" | "list" => {
                 if args.len() >= 3 && args[2] == "--global" {
                     // List global roster
@@ -107,24 +106,26 @@ fn main() {
 fn print_help() {
     println!("git-pair {}", env!("CARGO_PKG_VERSION"));
     println!("A git extension for pair programming with per-branch co-author management");
-    println!("");
+    println!();
     println!("USAGE:");
     println!("    git-pair <COMMAND>");
-    println!("");
+    println!();
     println!("COMMANDS:");
     println!("    init                                    Initialize git-pair for current branch");
     println!("    add <name> <surname> <email>            Add a co-author to current branch");
     println!("    add <alias>                             Add co-author from global roster");
     println!("    add --global <alias> <name> <email>     Add co-author to global roster");
-    println!("    clear                                   Remove all co-authors from current branch");
+    println!(
+        "    clear                                   Remove all co-authors from current branch"
+    );
     println!("    status                                  Show current branch co-authors");
     println!("    list --global                           Show global roster");
     println!("    help, --help, -h                        Show this help message");
     println!("    --version, -V                           Show version information");
-    println!("");
+    println!();
     println!("ENVIRONMENT VARIABLES:");
     println!("    GIT_PAIR_ROSTER_FILE                    Override global roster file location");
-    println!("");
+    println!();
     println!("EXAMPLES:");
     println!("    git-pair init");
     println!("    git-pair add John Doe john.doe@company.com");
