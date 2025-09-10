@@ -273,6 +273,23 @@ cargo test
 cargo test
 ```
 
+### Development Scripts
+
+For local development, use these handy scripts:
+
+```bash
+# Run all checks (formatting, linting, tests, integration tests)
+./check.sh
+
+# Apply automatic fixes (formatting, auto-fixable clippy suggestions)
+./fix.sh
+
+# Run integration tests only
+./integration_test.sh
+```
+
+The `check.sh` script mirrors what the CI pipeline does and is perfect for ensuring your code is ready before committing.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

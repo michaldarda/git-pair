@@ -26,6 +26,15 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+    - name: Build release binary for integration tests
+      run: cargo build --release
+
+    - name: Make integration test script executable
+      run: chmod +x ./integration_test.sh
+
+    - name: Run integration tests
+      run: ./integration_test.sh
+
   build:
     name: Build and Release
     needs: test

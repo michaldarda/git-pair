@@ -455,7 +455,7 @@ mod tests {
 
     fn get_current_branch_in(working_dir: &Path) -> Result<String, String> {
         let output = Command::new("git")
-            .args(&["branch", "--show-current"])
+            .args(["branch", "--show-current"])
             .current_dir(working_dir)
             .output()
             .map_err(|e| format!("Error running git command: {}", e))?;
@@ -477,10 +477,7 @@ mod tests {
         let branch_name = get_current_branch_in(working_dir)?;
 
         // Sanitize branch name for filename (replace problematic characters)
-        let safe_branch_name = branch_name
-            .replace('/', "_")
-            .replace('\\', "_")
-            .replace(':', "_");
+        let safe_branch_name = branch_name.replace(['/', '\\', ':'], "_");
 
         Ok(git_pair_dir.join(format!("config-{}", safe_branch_name)))
     }
@@ -538,7 +535,7 @@ mod tests {
         let coauthor_line = format!("Co-authored-by: {} <{}>\n", full_name, email);
 
         // Check if this co-author already exists
-        if existing_content.contains(&coauthor_line.trim()) {
+        if existing_content.contains(coauthor_line.trim()) {
             return Ok(format!(
                 "Co-author '{}' <{}> already exists on branch '{}'",
                 full_name, email, branch_name
@@ -638,7 +635,7 @@ mod tests {
 
         // Split name into first and last name
         let name_parts: Vec<&str> = name.split_whitespace().collect();
-        let first_name = name_parts.get(0).map_or("", |v| v).to_string();
+        let first_name = name_parts.first().map_or("", |v| v).to_string();
         let last_name = if name_parts.len() > 1 {
             name_parts[1..].join(" ")
         } else {
@@ -701,18 +698,18 @@ mod tests {
 
         // Initialize git repo in the temp directory (without changing global cwd)
         Command::new("git")
-            .args(&["init"])
+            .args(["init"])
             .current_dir(repo_path)
             .output()?;
 
         // Configure git user (required for commits)
         Command::new("git")
-            .args(&["config", "user.name", "Test User"])
+            .args(["config", "user.name", "Test User"])
             .current_dir(repo_path)
             .output()?;
 
         Command::new("git")
-            .args(&["config", "user.email", "test@example.com"])
+            .args(["config", "user.email", "test@example.com"])
             .current_dir(repo_path)
             .output()?;
 
@@ -764,14 +761,14 @@ mod tests {
     fn test_add_coauthor_success() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
+        init_pair_config_in(test_dir).expect("Init should succeed");
 
-        let result = add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com")
+        let result = add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
             .expect("Add should succeed");
         assert!(result.contains("Added co-author: John Doe"));
 
         // Check branch-specific config file was updated
-        let branch_name = get_current_branch_in(&test_dir).expect("Should get current branch");
+        let branch_name = get_current_branch_in(test_dir).expect("Should get current branch");
         let config_dir = test_dir.join(".git/git-pair");
         let config_file = config_dir.join(format!("config-{}", branch_name));
         let config_content = fs::read_to_string(&config_file).expect("Config file should exist");
@@ -785,14 +782,14 @@ mod tests {
     fn test_add_coauthor_duplicate() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
+        init_pair_config_in(test_dir).expect("Init should succeed");
 
         // Add first time
-        add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com")
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
             .expect("First add should succeed");
 
         // Add same person again
-        let result = add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com")
+        let result = add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
             .expect("Duplicate add should succeed");
         assert!(result.contains("already exists"));
     }
@@ -802,7 +799,7 @@ mod tests {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
 
-        let result = add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com");
+        let result = add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("git-pair not initialized"));
     }
@@ -811,15 +808,15 @@ mod tests {
     fn test_multiple_coauthors() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
+        init_pair_config_in(test_dir).expect("Init should succeed");
 
         // Add multiple co-authors
-        add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com")
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
             .expect("First add should succeed");
-        add_coauthor_in(&test_dir, "Jane", "Smith", "jane.smith@example.com")
+        add_coauthor_in(test_dir, "Jane", "Smith", "jane.smith@example.com")
             .expect("Second add should succeed");
 
-        let coauthors = get_coauthors_in(&test_dir).expect("Get coauthors should succeed");
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
         assert_eq!(coauthors.len(), 2);
         assert!(coauthors.iter().any(|c| c.contains("John Doe")));
         assert!(coauthors.iter().any(|c| c.contains("Jane Smith")));
@@ -829,15 +826,15 @@ mod tests {
     fn test_clear_coauthors_success() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
-        add_coauthor_in(&test_dir, "John", "Doe", "john.doe@example.com")
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
             .expect("Add should succeed");
 
-        let result = clear_coauthors_in(&test_dir).expect("Clear should succeed");
+        let result = clear_coauthors_in(test_dir).expect("Clear should succeed");
         assert!(result.contains("Cleared all co-authors"));
 
         // Check that co-authors were cleared
-        let coauthors = get_coauthors_in(&test_dir).expect("Get coauthors should succeed");
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
         assert!(coauthors.is_empty());
 
         // Check that git hook was removed
@@ -849,7 +846,7 @@ mod tests {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
 
-        let result = clear_coauthors_in(&test_dir);
+        let result = clear_coauthors_in(test_dir);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("git-pair not initialized"));
     }
@@ -858,9 +855,9 @@ mod tests {
     fn test_get_coauthors_empty() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
+        init_pair_config_in(test_dir).expect("Init should succeed");
 
-        let coauthors = get_coauthors_in(&test_dir).expect("Get coauthors should succeed");
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
         assert!(coauthors.is_empty());
     }
 
@@ -869,7 +866,7 @@ mod tests {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
 
-        let result = get_coauthors_in(&test_dir);
+        let result = get_coauthors_in(test_dir);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("git-pair not initialized"));
     }
@@ -878,8 +875,8 @@ mod tests {
     fn test_git_hook_functionality() {
         let temp_dir = setup_test_repo().expect("Failed to setup test repo");
         let test_dir = temp_dir.path();
-        init_pair_config_in(&test_dir).expect("Init should succeed");
-        add_coauthor_in(&test_dir, "Alice", "Johnson", "alice@example.com")
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "Alice", "Johnson", "alice@example.com")
             .expect("Add should succeed");
 
         // Create a test file and commit with -m flag
@@ -887,14 +884,14 @@ mod tests {
         fs::write(&test_file, "test content").expect("Should write test file");
 
         Command::new("git")
-            .args(&["add", "test.txt"])
-            .current_dir(&test_dir)
+            .args(["add", "test.txt"])
+            .current_dir(test_dir)
             .output()
             .expect("Git add should succeed");
 
         let output = Command::new("git")
-            .args(&["commit", "-m", "Test commit message"])
-            .current_dir(&test_dir)
+            .args(["commit", "-m", "Test commit message"])
+            .current_dir(test_dir)
             .output()
             .expect("Git commit should succeed");
 
@@ -902,8 +899,8 @@ mod tests {
 
         // Check that the commit message includes co-author
         let log_output = Command::new("git")
-            .args(&["log", "--pretty=format:%B", "-1"])
-            .current_dir(&test_dir)
+            .args(["log", "--pretty=format:%B", "-1"])
+            .current_dir(test_dir)
             .output()
             .expect("Git log should succeed");
 
@@ -986,7 +983,7 @@ mod tests {
         env::set_var("GIT_PAIR_ROSTER_FILE", temp_path.to_str().unwrap());
 
         // Initialize branch config
-        init_pair_config_in(&test_dir).expect("Init should succeed");
+        init_pair_config_in(test_dir).expect("Init should succeed");
 
         // Add to global roster
         add_global_coauthor("bob", "Bob Wilson", "bob@example.com")
@@ -994,16 +991,16 @@ mod tests {
 
         // Test adding from global roster
         let result =
-            add_coauthor_from_global_in(&test_dir, "bob").expect("Should add from global roster");
+            add_coauthor_from_global_in(test_dir, "bob").expect("Should add from global roster");
         assert!(result.contains("Added co-author: Bob Wilson"));
 
         // Verify it was added to branch config
-        let coauthors = get_coauthors_in(&test_dir).expect("Should get coauthors");
+        let coauthors = get_coauthors_in(test_dir).expect("Should get coauthors");
         assert_eq!(coauthors.len(), 1);
         assert!(coauthors[0].contains("Bob Wilson"));
 
         // Test non-existent alias
-        let result = add_coauthor_from_global_in(&test_dir, "charlie");
+        let result = add_coauthor_from_global_in(test_dir, "charlie");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found in global roster"));
 
