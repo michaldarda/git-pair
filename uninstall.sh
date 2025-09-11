@@ -126,7 +126,8 @@ main() {
     echo -e "${BLUE}   Feedback: https://github.com/michaldarda/git-pair/issues${NC}"
 }
 
-# Check if script is being piped from curl/wget
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Run the main function unless this script is being sourced
+# This works for both direct execution and piped execution from curl/wget
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]] || [[ -z "${BASH_SOURCE[0]:-}" ]]; then
     main "$@"
 fi
