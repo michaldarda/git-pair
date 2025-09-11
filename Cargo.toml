@@ -1,6 +1,6 @@
 [package]
 name = "git-pair"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A Git extension for managing pair programming sessions with per-branch co-author configuration"
 license = "MIT"
