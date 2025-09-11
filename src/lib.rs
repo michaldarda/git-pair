@@ -284,6 +284,115 @@ fn remove_git_hook() -> Result<(), String> {
     remove_git_hook_in(&current_dir)
 }
 
+pub fn remove_coauthor(identifier: &str) -> Result<String, String> {
+    let config_file = get_branch_config_file()?;
+    let branch_name = get_current_branch()?;
+
+    // Check if git-pair is initialized for this branch
+    if !config_file.exists() {
+        return Err(format!(
+            "git-pair not initialized for branch '{}'. Please run 'git-pair init' first.",
+            branch_name
+        ));
+    }
+
+    // Read existing config
+    let existing_content = fs::read_to_string(&config_file)
+        .map_err(|e| format!("Error reading config file: {}", e))?;
+
+    // Get current co-authors
+    let mut coauthor_lines: Vec<String> = existing_content
+        .lines()
+        .filter(|line| line.starts_with("Co-authored-by:"))
+        .map(|line| line.to_string())
+        .collect();
+
+    // Store original count for comparison
+    let original_count = coauthor_lines.len();
+
+    // Try to match by different criteria
+    coauthor_lines.retain(|line| !matches_coauthor(line, identifier));
+
+    if coauthor_lines.len() == original_count {
+        // No co-author was removed, check if it might be a global alias
+        if let Ok(roster) = get_global_roster() {
+            if let Some((_, name, email)) = roster.iter().find(|(alias, _, _)| alias == identifier)
+            {
+                // Try to remove by the actual name/email from the global roster
+                let full_name_pattern = name;
+                let email_pattern = email;
+
+                coauthor_lines.retain(|line| {
+                    !line.contains(full_name_pattern) && !line.contains(email_pattern)
+                });
+
+                if coauthor_lines.len() == original_count {
+                    return Err(format!(
+                        "Co-author matching alias '{}' ({} <{}>) not found on branch '{}'",
+                        identifier, name, email, branch_name
+                    ));
+                }
+            } else {
+                return Err(format!("Co-author '{}' not found on branch '{}'. Use 'git-pair status' to see current co-authors.", identifier, branch_name));
+            }
+        } else {
+            return Err(format!("Co-author '{}' not found on branch '{}'. Use 'git-pair status' to see current co-authors.", identifier, branch_name));
+        }
+    }
+
+    // Reconstruct the config file content
+    let mut new_content = String::new();
+
+    // Add header
+    new_content.push_str(&format!(
+        "# git-pair configuration file for branch '{}'\n# Co-authors will be listed here\n",
+        branch_name
+    ));
+
+    // Add remaining co-authors
+    for coauthor in &coauthor_lines {
+        new_content.push_str(coauthor);
+        new_content.push('\n');
+    }
+
+    // Write back the updated content
+    fs::write(&config_file, new_content)
+        .map_err(|e| format!("Error writing to config file: {}", e))?;
+
+    // Update the commit template
+    update_commit_template()?;
+
+    let removed_count = original_count - coauthor_lines.len();
+    if removed_count == 1 {
+        Ok(format!(
+            "Removed 1 co-author matching '{}' from branch '{}'",
+            identifier, branch_name
+        ))
+    } else {
+        Ok(format!(
+            "Removed {} co-authors matching '{}' from branch '{}'",
+            removed_count, identifier, branch_name
+        ))
+    }
+}
+
+fn matches_coauthor(coauthor_line: &str, identifier: &str) -> bool {
+    // Match by full name (case-insensitive)
+    if coauthor_line
+        .to_lowercase()
+        .contains(&identifier.to_lowercase())
+    {
+        return true;
+    }
+
+    // Match by email
+    if coauthor_line.contains(identifier) {
+        return true;
+    }
+
+    false
+}
+
 pub fn clear_coauthors() -> Result<String, String> {
     let config_file = get_branch_config_file()?;
     let branch_name = get_current_branch()?;
@@ -522,6 +631,9 @@ mod tests {
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    // Import the helper function for tests
+    use super::matches_coauthor;
+
     // Mutex to ensure global roster tests don't interfere with each other
     static GLOBAL_ROSTER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -713,6 +825,103 @@ mod tests {
             .collect();
 
         Ok(coauthors)
+    }
+
+    fn remove_coauthor_in(working_dir: &Path, identifier: &str) -> Result<String, String> {
+        let config_file = get_branch_config_file_in(working_dir)?;
+        let branch_name = get_current_branch_in(working_dir)?;
+
+        // Check if git-pair is initialized for this branch
+        if !config_file.exists() {
+            return Err(format!(
+                "git-pair not initialized for branch '{}'. Please run 'git-pair init' first.",
+                branch_name
+            ));
+        }
+
+        // Read existing config
+        let existing_content = fs::read_to_string(&config_file)
+            .map_err(|e| format!("Error reading config file: {}", e))?;
+
+        // Get current co-authors
+        let mut coauthor_lines: Vec<String> = existing_content
+            .lines()
+            .filter(|line| line.starts_with("Co-authored-by:"))
+            .map(|line| line.to_string())
+            .collect();
+
+        // Store original count for comparison
+        let original_count = coauthor_lines.len();
+
+        // Try to match by different criteria
+        coauthor_lines.retain(|line| !matches_coauthor(line, identifier));
+
+        if coauthor_lines.len() == original_count {
+            // No co-author was removed, check if it might be a global alias
+            if let Ok(roster) = get_global_roster() {
+                if let Some((_, name, email)) =
+                    roster.iter().find(|(alias, _, _)| alias == identifier)
+                {
+                    // Try to remove by the actual name/email from the global roster
+                    let full_name_pattern = name;
+                    let email_pattern = email;
+
+                    coauthor_lines.retain(|line| {
+                        !line.contains(full_name_pattern) && !line.contains(email_pattern)
+                    });
+
+                    if coauthor_lines.len() == original_count {
+                        return Err(format!(
+                            "Co-author matching alias '{}' ({} <{}>) not found on branch '{}'",
+                            identifier, name, email, branch_name
+                        ));
+                    }
+                } else {
+                    return Err(format!("Co-author '{}' not found on branch '{}'. Use 'git-pair status' to see current co-authors.", identifier, branch_name));
+                }
+            } else {
+                return Err(format!("Co-author '{}' not found on branch '{}'. Use 'git-pair status' to see current co-authors.", identifier, branch_name));
+            }
+        }
+
+        // Reconstruct the config file content
+        let mut new_content = String::new();
+
+        // Add header
+        new_content.push_str(&format!(
+            "# git-pair configuration file for branch '{}'\n# Co-authors will be listed here\n",
+            branch_name
+        ));
+
+        // Add remaining co-authors
+        for coauthor in &coauthor_lines {
+            new_content.push_str(coauthor);
+            new_content.push('\n');
+        }
+
+        // Write back the updated content
+        fs::write(&config_file, new_content)
+            .map_err(|e| format!("Error writing to config file: {}", e))?;
+
+        // Update git hook
+        if coauthor_lines.is_empty() {
+            remove_git_hook_in(working_dir)?;
+        } else {
+            install_git_hook_in(working_dir)?;
+        }
+
+        let removed_count = original_count - coauthor_lines.len();
+        if removed_count == 1 {
+            Ok(format!(
+                "Removed 1 co-author matching '{}' from branch '{}'",
+                identifier, branch_name
+            ))
+        } else {
+            Ok(format!(
+                "Removed {} co-authors matching '{}' from branch '{}'",
+                removed_count, identifier, branch_name
+            ))
+        }
     }
 
     fn clear_coauthors_in(working_dir: &Path) -> Result<String, String> {
@@ -1114,6 +1323,161 @@ mod tests {
 
         // Clean up
         env::remove_var("GIT_PAIR_ROSTER_FILE");
+    }
+
+    #[test]
+    fn test_remove_coauthor_by_name() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        init_pair_config_in(test_dir).expect("Init should succeed");
+
+        // Add multiple co-authors
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
+        add_coauthor_in(test_dir, "Jane", "Smith", "jane.smith@example.com")
+            .expect("Add should succeed");
+
+        // Remove by name
+        let result = remove_coauthor_in(test_dir, "John Doe").expect("Remove should succeed");
+        assert!(result.contains("Removed 1 co-author matching 'John Doe'"));
+
+        // Check remaining co-authors
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert_eq!(coauthors.len(), 1);
+        assert!(coauthors[0].contains("Jane Smith"));
+        assert!(!coauthors[0].contains("John Doe"));
+    }
+
+    #[test]
+    fn test_remove_coauthor_by_email() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        init_pair_config_in(test_dir).expect("Init should succeed");
+
+        // Add multiple co-authors
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
+        add_coauthor_in(test_dir, "Jane", "Smith", "jane.smith@example.com")
+            .expect("Add should succeed");
+
+        // Remove by email
+        let result =
+            remove_coauthor_in(test_dir, "jane.smith@example.com").expect("Remove should succeed");
+        assert!(result.contains("Removed 1 co-author matching 'jane.smith@example.com'"));
+
+        // Check remaining co-authors
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert_eq!(coauthors.len(), 1);
+        assert!(coauthors[0].contains("John Doe"));
+        assert!(!coauthors[0].contains("Jane Smith"));
+    }
+
+    #[test]
+    fn test_remove_coauthor_by_global_alias() {
+        let _lock = GLOBAL_ROSTER_TEST_LOCK.lock().unwrap();
+
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        let temp_path = create_temp_file().expect("Failed to create temp file");
+        env::set_var("GIT_PAIR_ROSTER_FILE", temp_path.to_str().unwrap());
+
+        // Setup global roster
+        add_global_coauthor("alice", "Alice Johnson", "alice@example.com")
+            .expect("Should add to global roster");
+        add_global_coauthor("bob", "Bob Wilson", "bob@example.com")
+            .expect("Should add to global roster");
+
+        // Initialize and add co-authors
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_from_global_in(test_dir, "alice").expect("Add alice should succeed");
+        add_coauthor_from_global_in(test_dir, "bob").expect("Add bob should succeed");
+
+        // Remove by alias
+        let result = remove_coauthor_in(test_dir, "alice").expect("Remove should succeed");
+        assert!(result.contains("Removed 1 co-author matching 'alice'"));
+
+        // Check remaining co-authors
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert_eq!(coauthors.len(), 1);
+        assert!(coauthors[0].contains("Bob Wilson"));
+        assert!(!coauthors[0].contains("Alice Johnson"));
+
+        // Clean up
+        env::remove_var("GIT_PAIR_ROSTER_FILE");
+    }
+
+    #[test]
+    fn test_remove_coauthor_not_found() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        init_pair_config_in(test_dir).expect("Init should succeed");
+
+        // Add one co-author
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
+
+        // Try to remove non-existent co-author
+        let result = remove_coauthor_in(test_dir, "Jane Smith");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found on branch"));
+
+        // Verify original co-author is still there
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert_eq!(coauthors.len(), 1);
+        assert!(coauthors[0].contains("John Doe"));
+    }
+
+    #[test]
+    fn test_remove_coauthor_not_initialized() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+
+        let result = remove_coauthor_in(test_dir, "John Doe");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("git-pair not initialized"));
+    }
+
+    #[test]
+    fn test_remove_last_coauthor_removes_hook() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        init_pair_config_in(test_dir).expect("Init should succeed");
+
+        // Add one co-author
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
+
+        // Verify hook exists
+        assert!(test_dir.join(".git/hooks/prepare-commit-msg").exists());
+
+        // Remove the only co-author
+        remove_coauthor_in(test_dir, "John Doe").expect("Remove should succeed");
+
+        // Verify hook was removed since no co-authors remain
+        assert!(!test_dir.join(".git/hooks/prepare-commit-msg").exists());
+
+        // Verify no co-authors remain
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert!(coauthors.is_empty());
+    }
+
+    #[test]
+    fn test_remove_coauthor_case_insensitive() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+        init_pair_config_in(test_dir).expect("Init should succeed");
+
+        // Add co-author
+        add_coauthor_in(test_dir, "John", "Doe", "john.doe@example.com")
+            .expect("Add should succeed");
+
+        // Remove with different case
+        let result = remove_coauthor_in(test_dir, "john doe").expect("Remove should succeed");
+        assert!(result.contains("Removed 1 co-author matching 'john doe'"));
+
+        // Verify co-author was removed
+        let coauthors = get_coauthors_in(test_dir).expect("Get coauthors should succeed");
+        assert!(coauthors.is_empty());
     }
 
     // Tests for improved hook management
