@@ -22,7 +22,7 @@ A Git extension for managing pair programming sessions. Easily configure Git to 
 
 ### Quick Install (Recommended)
 
-Install git-pair with a single command:
+Install or update git-pair with a single command:
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/michaldarda/git-pair/master/install.sh | sh
@@ -38,6 +38,7 @@ This will:
 - 🔍 Auto-detect your platform (Linux, macOS, Windows)
 - 📦 Download the latest release binary
 - 🔧 Install to `~/.local/bin/git-pair`
+- 📈 Update existing installations automatically
 - 📋 Provide instructions to add to your PATH
 
 ### Manual Installation

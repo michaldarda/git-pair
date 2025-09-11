@@ -168,8 +168,18 @@ download_and_install() {
 check_existing_installation() {
     if command -v git-pair >/dev/null 2>&1; then
         local current_version=$(git-pair --version 2>/dev/null | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
-        echo -e "${YELLOW}⚠️  git-pair is already installed (version: $current_version)${NC}"
-        echo -e "${YELLOW}   This will overwrite the existing installation.${NC}"
+        local latest_version="$1"
+        
+        echo -e "${YELLOW}⚠️  git-pair is already installed (current version: $current_version)${NC}"
+        
+        if [[ "$current_version" == "$latest_version" ]]; then
+            echo -e "${GREEN}✅ You already have the latest version installed!${NC}"
+            echo -e "${BLUE}   Re-installing anyway to ensure a clean installation...${NC}"
+        elif [[ "$current_version" != "unknown" ]]; then
+            echo -e "${BLUE}📈 Updating from $current_version to $latest_version${NC}"
+        else
+            echo -e "${YELLOW}   This will overwrite the existing installation.${NC}"
+        fi
         echo
     fi
 }
@@ -238,7 +248,7 @@ main() {
     echo
     
     # Check for existing installation
-    check_existing_installation
+    check_existing_installation "$version"
     
     # Detect platform
     local platform=$(detect_platform)
