@@ -25,9 +25,12 @@ cp "$OLDPWD/target/release/git-pair" .
 
 echo "✅ Test 1: Initialize git-pair"
 ./git-pair init
-# Check for branch-specific config file (should be config-master for default branch)
-if [ ! -f ".git/git-pair/config-master" ]; then
+# Get the current branch name and check for branch-specific config file
+CURRENT_BRANCH=$(git branch --show-current)
+if [ ! -f ".git/git-pair/config-$CURRENT_BRANCH" ]; then
     echo "❌ Branch-specific config file not created"
+    echo "Expected: .git/git-pair/config-$CURRENT_BRANCH"
+    ls -la .git/git-pair/ || echo "git-pair directory doesn't exist"
     exit 1
 fi
 
@@ -59,7 +62,7 @@ if [[ ! "$HOOK_CONTENT" == *"CURRENT_BRANCH"* ]] || [[ ! "$HOOK_CONTENT" == *"CO
 fi
 
 # Check that the branch-specific config file contains the co-authors
-CONFIG_CONTENT=$(cat .git/git-pair/config-master)
+CONFIG_CONTENT=$(cat ".git/git-pair/config-$CURRENT_BRANCH")
 if [[ ! "$CONFIG_CONTENT" == *"John Doe"* ]] || [[ ! "$CONFIG_CONTENT" == *"Jane Smith"* ]]; then
     echo "❌ Branch config doesn't contain co-authors"
     echo "Config: $CONFIG_CONTENT"
