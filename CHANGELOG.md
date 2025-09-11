@@ -5,13 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.0] - 2025-09-11
+
+### Added
+- Support for removing co-authors with `git-pair remove` command (thanks to @pawelma)
+- Integration tests for remove functionality
+- Re-enabled pushing to crates.io
+
+### Changed
+- Updated README with remove co-author functionality documentation
+
 ## [0.2.0] - 2025-09-12
 
 ### Added
 - rustup-like installer and uninstaller scripts
 
 ### Fixed
-- Git hook management now preserves existing hooks instead of overwriting them
+- Git hook management now preserves existing hooks instead of overwriting them (thanks to @pawelma)
 - Integration tests updated to work with modern Git default branch naming
 - Temporarily disabled crates.io publishing until token is configured
 

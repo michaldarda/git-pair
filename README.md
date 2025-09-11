@@ -363,6 +363,12 @@ For local development, use these handy scripts:
 
 The `check.sh` script mirrors what the CI pipeline does and is perfect for ensuring your code is ready before committing.
 
+## Contributors
+
+Thank you to all the contributors who have helped make git-pair better:
+
+- [pawelma](https://github.com/pawelma) - Hook management improvements and remove co-author functionality
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
