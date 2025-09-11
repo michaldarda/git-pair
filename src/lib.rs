@@ -258,12 +258,20 @@ fn remove_git_hook_in(working_dir: &Path) -> Result<(), String> {
         .join("prepare-commit-msg");
 
     if hook_file.exists() {
-        // Check if this is our hook by looking for git-pair signature
         let hook_content = fs::read_to_string(&hook_file)
             .map_err(|e| format!("Error reading hook file: {}", e))?;
 
-        if hook_content.contains("git-pair hook") {
-            fs::remove_file(&hook_file).map_err(|e| format!("Error removing git hook: {}", e))?;
+        // Check if our section exists
+        if let Some(new_content) = remove_git_pair_section(&hook_content) {
+            if is_effectively_empty(&new_content) {
+                // If only whitespace/comments/shebang remain, remove the entire file
+                fs::remove_file(&hook_file)
+                    .map_err(|e| format!("Error removing git hook: {}", e))?;
+            } else {
+                // Write back the content without our section
+                fs::write(&hook_file, new_content)
+                    .map_err(|e| format!("Error updating git hook: {}", e))?;
+            }
         }
     }
 
@@ -328,6 +336,118 @@ pub fn get_coauthors() -> Result<Vec<String>, String> {
     Ok(coauthors)
 }
 
+// Helper functions for hook management
+
+/// Checks if hook content is effectively empty (only shebang, whitespace, or comments)
+fn is_effectively_empty(content: &str) -> bool {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            return false;
+        }
+    }
+    true
+}
+
+/// Merges git-pair section into existing hook content
+fn merge_git_pair_section(
+    existing_content: &str,
+    git_pair_section: &str,
+) -> Result<String, String> {
+    const BEGIN_MARKER: &str = "# BEGIN git-pair";
+    const END_MARKER: &str = "# END git-pair";
+
+    // Check if git-pair section already exists
+    if let Some(begin_pos) = existing_content.find(BEGIN_MARKER) {
+        if let Some(end_pos) = existing_content.find(END_MARKER) {
+            // Replace existing git-pair section
+            let before = &existing_content[..begin_pos];
+            let after = &existing_content[end_pos + END_MARKER.len()..];
+
+            // Remove trailing newline from 'before' if it exists, and ensure proper spacing
+            let before_trimmed = before.trim_end();
+            let after_trimmed = after.trim_start();
+
+            let mut result = String::new();
+
+            // Add shebang if this is a new file and before section is empty
+            if before_trimmed.is_empty() && !existing_content.starts_with("#!") {
+                result.push_str("#!/bin/sh\n");
+            }
+
+            if !before_trimmed.is_empty() {
+                result.push_str(before_trimmed);
+                result.push('\n');
+            }
+
+            result.push_str(git_pair_section);
+
+            if !after_trimmed.is_empty() {
+                result.push('\n');
+                result.push_str(after_trimmed);
+            }
+
+            Ok(result)
+        } else {
+            Err("Found BEGIN marker but no END marker in existing hook".to_string())
+        }
+    } else {
+        // Append git-pair section to existing content
+        let mut result = String::new();
+
+        if existing_content.trim().is_empty() {
+            // New file, add shebang
+            result.push_str("#!/bin/sh\n");
+            result.push_str(git_pair_section);
+        } else {
+            // Existing content, append our section
+            result.push_str(existing_content.trim_end());
+            result.push_str("\n\n");
+            result.push_str(git_pair_section);
+        }
+
+        Ok(result)
+    }
+}
+
+/// Removes git-pair section from hook content, returns None if no section found
+fn remove_git_pair_section(content: &str) -> Option<String> {
+    const BEGIN_MARKER: &str = "# BEGIN git-pair";
+    const END_MARKER: &str = "# END git-pair";
+
+    if let Some(begin_pos) = content.find(BEGIN_MARKER) {
+        if let Some(end_pos) = content.find(END_MARKER) {
+            let before = &content[..begin_pos];
+            let after = &content[end_pos + END_MARKER.len()..];
+
+            // Clean up spacing - remove extra newlines around the removed section
+            let before_trimmed = before.trim_end();
+            let after_trimmed = after.trim_start();
+
+            let mut result = String::new();
+
+            if !before_trimmed.is_empty() {
+                result.push_str(before_trimmed);
+                if !after_trimmed.is_empty() {
+                    result.push('\n');
+                }
+            }
+
+            if !after_trimmed.is_empty() {
+                result.push_str(after_trimmed);
+            }
+
+            Some(result)
+        } else {
+            // Found BEGIN but no END, don't modify
+            None
+        }
+    } else {
+        // No git-pair section found
+        None
+    }
+}
+
 fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
     let hooks_dir = working_dir.join(".git").join("hooks");
     let hook_file = hooks_dir.join("prepare-commit-msg");
@@ -335,8 +455,16 @@ fn install_git_hook_in(working_dir: &Path) -> Result<(), String> {
     // Create hooks directory if it doesn't exist
     fs::create_dir_all(&hooks_dir).map_err(|e| format!("Error creating hooks directory: {}", e))?;
 
-    // Create the hook script that dynamically reads branch-specific config
-    let hook_content = r#"#!/bin/sh
+    // Read existing hook content if it exists
+    let existing_content = if hook_file.exists() {
+        fs::read_to_string(&hook_file)
+            .map_err(|e| format!("Error reading existing hook file: {}", e))?
+    } else {
+        String::new()
+    };
+
+    // Generate our git-pair hook section
+    let git_pair_section = r#"# BEGIN git-pair
 # git-pair hook to automatically add co-authors
 
 COMMIT_MSG_FILE=$1
@@ -361,9 +489,13 @@ if [ -z "$COMMIT_SOURCE" ] || [ "$COMMIT_SOURCE" = "message" ]; then
     fi
   fi
 fi
-"#;
+# END git-pair"#;
 
-    fs::write(&hook_file, hook_content).map_err(|e| format!("Error writing git hook: {}", e))?;
+    // Create the new hook content
+    let new_content = merge_git_pair_section(&existing_content, git_pair_section)?;
+
+    // Write the hook file
+    fs::write(&hook_file, new_content).map_err(|e| format!("Error writing git hook: {}", e))?;
 
     // Make the hook executable
     #[cfg(unix)]
@@ -982,5 +1114,156 @@ mod tests {
 
         // Clean up
         env::remove_var("GIT_PAIR_ROSTER_FILE");
+    }
+
+    // Tests for improved hook management
+
+    #[test]
+    fn test_is_effectively_empty() {
+        assert!(is_effectively_empty(""));
+        assert!(is_effectively_empty("   \n  \t  "));
+        assert!(is_effectively_empty("#!/bin/sh"));
+        assert!(is_effectively_empty("#!/bin/sh\n# comment"));
+        assert!(is_effectively_empty("#!/bin/sh\n\n# comment\n   "));
+        assert!(!is_effectively_empty("#!/bin/sh\necho 'something'"));
+        assert!(!is_effectively_empty("echo 'test'"));
+    }
+
+    #[test]
+    fn test_merge_git_pair_section_new_file() {
+        let existing = "";
+        let git_pair_section = "# BEGIN git-pair\necho 'git-pair'\n# END git-pair";
+
+        let result = merge_git_pair_section(existing, git_pair_section).unwrap();
+        assert!(result.starts_with("#!/bin/sh\n"));
+        assert!(result.contains("# BEGIN git-pair"));
+        assert!(result.contains("# END git-pair"));
+    }
+
+    #[test]
+    fn test_merge_git_pair_section_existing_content() {
+        let existing = "#!/bin/sh\necho 'existing hook'";
+        let git_pair_section = "# BEGIN git-pair\necho 'git-pair'\n# END git-pair";
+
+        let result = merge_git_pair_section(existing, git_pair_section).unwrap();
+        assert!(result.contains("echo 'existing hook'"));
+        assert!(result.contains("# BEGIN git-pair"));
+        assert!(result.ends_with("# END git-pair"));
+    }
+
+    #[test]
+    fn test_merge_git_pair_section_replace_existing() {
+        let existing =
+            "#!/bin/sh\necho 'before'\n# BEGIN git-pair\necho 'old'\n# END git-pair\necho 'after'";
+        let git_pair_section = "# BEGIN git-pair\necho 'new'\n# END git-pair";
+
+        let result = merge_git_pair_section(existing, git_pair_section).unwrap();
+        assert!(result.contains("echo 'before'"));
+        assert!(result.contains("echo 'new'"));
+        assert!(result.contains("echo 'after'"));
+        assert!(!result.contains("echo 'old'"));
+    }
+
+    #[test]
+    fn test_remove_git_pair_section_success() {
+        let content = "#!/bin/sh\necho 'before'\n# BEGIN git-pair\necho 'git-pair'\n# END git-pair\necho 'after'";
+
+        let result = remove_git_pair_section(content).unwrap();
+        assert!(result.contains("echo 'before'"));
+        assert!(result.contains("echo 'after'"));
+        assert!(!result.contains("git-pair"));
+        assert!(!result.contains("BEGIN"));
+    }
+
+    #[test]
+    fn test_remove_git_pair_section_not_found() {
+        let content = "#!/bin/sh\necho 'no git-pair here'";
+
+        let result = remove_git_pair_section(content);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_remove_git_pair_section_only_content() {
+        let content = "#!/bin/sh\n# BEGIN git-pair\necho 'git-pair'\n# END git-pair";
+
+        let result = remove_git_pair_section(content).unwrap();
+        assert_eq!(result.trim(), "#!/bin/sh");
+    }
+
+    #[test]
+    fn test_hook_preservation_workflow() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+
+        // Create an existing hook
+        let hooks_dir = test_dir.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).expect("Should create hooks dir");
+        let hook_file = hooks_dir.join("prepare-commit-msg");
+        let existing_hook = "#!/bin/sh\necho 'existing hook logic'";
+        fs::write(&hook_file, existing_hook).expect("Should write existing hook");
+
+        // Initialize git-pair and add co-author
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "John", "Doe", "john@example.com").expect("Add should succeed");
+
+        // Check that existing hook content is preserved
+        let hook_content = fs::read_to_string(&hook_file).expect("Hook should exist");
+        assert!(hook_content.contains("existing hook logic"));
+        assert!(hook_content.contains("# BEGIN git-pair"));
+        assert!(hook_content.contains("# END git-pair"));
+
+        // Clear co-authors and check that only git-pair section is removed
+        clear_coauthors_in(test_dir).expect("Clear should succeed");
+
+        let remaining_content = fs::read_to_string(&hook_file).expect("Hook should still exist");
+        assert!(remaining_content.contains("existing hook logic"));
+        assert!(!remaining_content.contains("git-pair"));
+    }
+
+    #[test]
+    fn test_hook_complete_removal() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+
+        // Initialize git-pair and add co-author (no existing hook)
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "John", "Doe", "john@example.com").expect("Add should succeed");
+
+        let hook_file = test_dir.join(".git/hooks/prepare-commit-msg");
+        assert!(hook_file.exists());
+
+        // Clear co-authors - should remove entire hook file since it only contains git-pair content
+        clear_coauthors_in(test_dir).expect("Clear should succeed");
+
+        assert!(!hook_file.exists());
+    }
+
+    #[test]
+    fn test_hook_update_preserves_existing() {
+        let temp_dir = setup_test_repo().expect("Failed to setup test repo");
+        let test_dir = temp_dir.path();
+
+        // Create existing hook
+        let hooks_dir = test_dir.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).expect("Should create hooks dir");
+        let hook_file = hooks_dir.join("prepare-commit-msg");
+        fs::write(&hook_file, "#!/bin/sh\necho 'original'").expect("Should write hook");
+
+        // Initialize and add first co-author
+        init_pair_config_in(test_dir).expect("Init should succeed");
+        add_coauthor_in(test_dir, "John", "Doe", "john@example.com").expect("Add should succeed");
+
+        // Add second co-author (should update hook)
+        add_coauthor_in(test_dir, "Jane", "Smith", "jane@example.com").expect("Add should succeed");
+
+        // Original content should still be there
+        let hook_content = fs::read_to_string(&hook_file).expect("Hook should exist");
+        assert!(hook_content.contains("echo 'original'"));
+        assert!(hook_content.contains("git-pair"));
+
+        // Should only have one git-pair section
+        assert_eq!(hook_content.matches("# BEGIN git-pair").count(), 1);
+        assert_eq!(hook_content.matches("# END git-pair").count(), 1);
     }
 }
