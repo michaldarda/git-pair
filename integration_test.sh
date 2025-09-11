@@ -156,6 +156,58 @@ if [[ ! "$ERROR_OUTPUT" == *"not found in global roster"* ]]; then
     exit 1
 fi
 
+echo "✅ Test 15: Remove co-authors - by name"
+./git-pair remove "Alice Johnson"
+REMOVE_STATUS=$(./git-pair status)
+if [[ "$REMOVE_STATUS" == *"Alice Johnson"* ]] || [[ ! "$REMOVE_STATUS" == *"Bob Wilson"* ]]; then
+    echo "❌ Remove by name failed"
+    echo "Status after remove: $REMOVE_STATUS"
+    exit 1
+fi
+
+echo "✅ Test 16: Remove co-authors - by email"
+# Add Alice back and remove by email
+./git-pair add alice
+./git-pair remove "bob@company.com"
+REMOVE_STATUS2=$(./git-pair status)
+if [[ "$REMOVE_STATUS2" == *"Bob Wilson"* ]] || [[ ! "$REMOVE_STATUS2" == *"Alice Johnson"* ]]; then
+    echo "❌ Remove by email failed"
+    echo "Status after remove: $REMOVE_STATUS2"
+    exit 1
+fi
+
+echo "✅ Test 17: Remove co-authors - by alias"
+# Add Bob back and remove by alias
+./git-pair add bob
+./git-pair remove alice
+REMOVE_STATUS3=$(./git-pair status)
+if [[ "$REMOVE_STATUS3" == *"Alice Johnson"* ]] || [[ ! "$REMOVE_STATUS3" == *"Bob Wilson"* ]]; then
+    echo "❌ Remove by alias failed"
+    echo "Status after remove: $REMOVE_STATUS3"
+    exit 1
+fi
+
+echo "✅ Test 18: Remove non-existent co-author"
+ERROR_OUTPUT2=$(./git-pair remove "Charlie Brown" 2>&1 || true)
+if [[ ! "$ERROR_OUTPUT2" == *"not found on branch"* ]]; then
+    echo "❌ Non-existent co-author remove error handling failed"
+    echo "Error output: $ERROR_OUTPUT2"
+    exit 1
+fi
+
+echo "✅ Test 19: Remove last co-author removes hook"
+./git-pair remove bob
+if [ -f ".git/hooks/prepare-commit-msg" ]; then
+    echo "❌ Git hook not removed after removing last co-author"
+    exit 1
+fi
+FINAL_STATUS=$(./git-pair status)
+if [[ ! "$FINAL_STATUS" == *"No co-authors configured"* ]]; then
+    echo "❌ Status should show no co-authors after removing all"
+    echo "Final status: $FINAL_STATUS"
+    exit 1
+fi
+
 # Cleanup temporary HOME
 rm -rf "$TEMP_ROSTER_FILE"
 unset GIT_PAIR_ROSTER_FILE
@@ -164,5 +216,5 @@ unset GIT_PAIR_ROSTER_FILE
 cd "$OLDPWD"
 rm -rf "$TEST_DIR"
 
-echo "🎉 All 14 integration tests passed!"
-echo "🚀 git-pair with global roster is ready for use!"
+echo "🎉 All 19 integration tests passed!"
+echo "🚀 git-pair with remove functionality is ready for use!"
