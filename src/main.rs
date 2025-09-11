@@ -1,6 +1,6 @@
 use git_pair::{
     add_coauthor, add_coauthor_from_global, add_global_coauthor, clear_coauthors, get_coauthors,
-    get_global_roster, init_pair_config,
+    get_global_roster, init_pair_config, remove_coauthor,
 };
 use std::env;
 
@@ -59,6 +59,21 @@ fn main() {
                 Ok(message) => println!("{}", message),
                 Err(e) => eprintln!("Error: {}", e),
             },
+            "remove" => {
+                if args.len() >= 3 {
+                    let identifier = &args[2];
+                    match remove_coauthor(identifier) {
+                        Ok(message) => println!("{}", message),
+                        Err(e) => eprintln!("Error: {}", e),
+                    }
+                } else {
+                    eprintln!("Usage: git-pair remove <name|email|alias>");
+                    eprintln!("Examples:");
+                    eprintln!("  git-pair remove \"John Doe\"");
+                    eprintln!("  git-pair remove john.doe@example.com");
+                    eprintln!("  git-pair remove alice");
+                }
+            }
             "status" | "list" => {
                 if args.len() >= 3 && args[2] == "--global" {
                     // List global roster
@@ -116,6 +131,7 @@ COMMANDS:
     add <name> <surname> <email>            Add a co-author to current branch
     add <alias>                             Add co-author from global roster
     add --global <alias> <name> <email>     Add co-author to global roster
+    remove <name|email|alias>               Remove a specific co-author from current branch
     clear                                   Remove all co-authors from current branch
     status                                  Show current branch co-authors
     list --global                           Show global roster
@@ -130,6 +146,9 @@ EXAMPLES:
     git-pair add John Doe john.doe@company.com
     git-pair add --global alice "Alice Johnson" alice@company.com
     git-pair add alice
+    git-pair remove "John Doe"
+    git-pair remove john.doe@company.com
+    git-pair remove alice
     git-pair status
     git-pair list --global
 "#,

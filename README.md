@@ -13,7 +13,7 @@ A Git extension for managing pair programming sessions. Easily configure Git to 
 - 👥 **Multiple authors**: Add multiple co-authors to your commits
 - 🔄 **Automatic switching**: Co-authors change automatically when you switch branches
 - ⚡ **Global roster**: Save frequently used co-authors with aliases for quick access across all repositories
-- 🧹 **Clean state management**: Clear pair configuration per branch when switching between solo and pair work
+- 🧹 **Flexible co-author management**: Remove individual co-authors or clear all at once
 - 📝 **Proper attribution**: Follows Git's standard Co-authored-by trailer format
 - ⚡ **Fast and lightweight**: Written in Rust for optimal performance
 - 🎯 **Branch isolation**: Complete separation of co-author configuration between branches
@@ -93,6 +93,21 @@ git pair add john    # Adds John Smith from global roster
 
 Adds co-authors to the current branch's pair programming session. Co-authors are branch-specific, so switching branches will use different co-author configurations.
 
+### Remove Specific Co-authors
+
+```bash
+# Remove by name
+git pair remove "Jane Doe"
+
+# Remove by email
+git pair remove jane.doe@company.com
+
+# Remove by global alias
+git pair remove jane
+```
+
+Removes specific co-authors from the current branch while keeping others. Supports flexible removal by name, email address, or global roster alias. The Git hook is automatically updated to reflect the changes, or removed entirely if no co-authors remain.
+
 ### Clear Pair Configuration
 
 ```bash
@@ -146,7 +161,7 @@ Co-authored-by: John Smith <john.smith@company.com>
 `git-pair` stores its configuration in branch-specific files within `.git/git-pair/` directory. This means:
 
 - **Per-branch configuration**: Each branch has its own co-authors
-- **Branch isolation**: Switching branches automatically uses the correct co-authors  
+- **Branch isolation**: Switching branches automatically uses the correct co-authors
 - **No global state pollution**: Configuration is repository-local
 - **Easy branch management**: Different teams can work on different branches with their own pair configurations
 - **Automatic cleanup**: Deleting a branch doesn't affect other branches' configurations
@@ -155,7 +170,7 @@ Example configuration structure:
 ```
 .git/git-pair/
 ├── config-main                    # Co-authors for main branch
-├── config-feature_auth            # Co-authors for feature/auth branch  
+├── config-feature_auth            # Co-authors for feature/auth branch
 └── config-bugfix_login            # Co-authors for bugfix/login branch
 
 ~/.config/git-pair/
@@ -175,7 +190,7 @@ The per-branch co-author system enables powerful workflows:
 ### Use Cases
 
 - **Large Teams**: Different squads working on different features
-- **Open Source**: Maintainers on main, contributors on feature branches  
+- **Open Source**: Maintainers on main, contributors on feature branches
 - **Client Work**: Different client teams on different feature branches
 - **Skill-based Pairing**: Frontend devs on UI branches, backend devs on API branches
 
@@ -187,6 +202,7 @@ The per-branch co-author system enables powerful workflows:
 | `git pair add <name> <surname> <email>` | Add a co-author to the current branch |
 | `git pair add <alias>` | Add co-author from global roster using alias |
 | `git pair add --global <alias> <name> <email>` | Add a co-author to global roster |
+| `git pair remove <name\|email\|alias>` | Remove a specific co-author from current branch |
 | `git pair clear` | Remove all co-authors from current branch |
 | `git pair status` | Show current branch's pair configuration |
 | `git pair list --global` | Show global roster of saved co-authors |
@@ -252,7 +268,7 @@ git checkout main
 git pair init
 git pair add alice bob    # Quick add from global roster
 
-# Switch to feature branch - set up feature team  
+# Switch to feature branch - set up feature team
 git checkout -b feature/authentication
 git pair init
 git pair add sarah        # Add Sarah from global roster
@@ -262,7 +278,7 @@ git pair add "Carol Davis" carol@company.com  # Add directly
 git commit -m "Implement login system"
 
 # Switch back to main - automatically uses Alice and Bob
-git checkout main  
+git checkout main
 git commit -m "Update documentation"
 
 # Each branch maintains its own co-author configuration!
@@ -277,6 +293,29 @@ git pair add "Eve Foster" eve@company.com
 
 # Check current branch's status
 git pair status
+
+# Remove specific team members as they leave the session
+git pair remove dave          # Remove by alias
+git pair remove "Eve Foster"  # Remove by name
+
+# Continue working with remaining co-authors
+git commit -m "Implement feature together"
+```
+
+### Managing Co-authors During Development
+
+```bash
+# Start with initial team
+git pair add alice bob
+
+# Add someone who joins later
+git pair add carol
+
+# Remove someone who leaves early
+git pair remove alice
+
+# Continue with bob and carol
+git commit -m "Complete feature implementation"
 ```
 
 ### Switching Back to Solo Work
